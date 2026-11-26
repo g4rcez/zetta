@@ -30,7 +30,7 @@ Decided and built on 2026-11-15. The product report listed four things a person 
 - `GET /api/bots/:id/stats?days=7|30`: answers, finished, failed, stopped; median and slowest-tenth time; how often the person stepped in (answers stopped, steers, approval cards the bot proposed, times it needed the person); ratings.
 - Web: Performance section (both periods side by side, so there is no filter to keep in the address).
 
-## Not done
+## Limits
 
 - No evals (scored comparisons): a saved test shows two answers, a person judges.
 - No cost per bot (tokens are stored for Claude Code only; see the product report).

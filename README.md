@@ -2,15 +2,10 @@
 
 Zetta is a web app for managing autonomous bots. Give your personal chief an outcome, let it coordinate specialists, and return to results or work that needs your attention.
 
-The product is for people who want useful work done, not another technical system to administer. Configuration must be understandable without knowing what a harness, MCP server, or hook is. Advanced controls remain available.
+The product is for people who want useful work done, not another technical system to administer. You set up a bot without knowing what a harness, MCP server, or hook is. Advanced controls remain available.
 
-**Status:** product definition and RFC backlog. The capabilities below describe the intended v1, not features already implemented.
-
-- [Wiki: user journeys, architecture, and product assumptions](docs/wiki/README.md)
-- [Confirmed product intent](docs/intent/zetta-v1.md)
-- [Implementation plan](tasks/plan.md)
-- [Ordered RFC backlog](TASKS.md)
-- [Small-model task execution rules](tasks/README.md)
+- [User guide and architecture](docs/wiki/README.md)
+- [Operations: settings, updates, scaling and each plugin](docs/operations)
 - [Repository stack and development setup](TECH.md)
 
 ## Install
@@ -22,6 +17,60 @@ curl -fsSL https://zettabot.app/install | bash
 ```
 
 The script ([install.sh](install.sh)) checks the computer (a running Docker or Podman, free disk space, free ports) and says what to fix if something is missing, clones the repository into `~/zetta` (set `ZETTA_DIR` to change it), writes the `.env` files, starts the containers and waits until Zetta answers. It prints the address to open and the setup key to paste. Run it again to update: it keeps your `.env` files and your data. Options go after `bash -s --`: `--url https://zetta.example.com` sets the public address everywhere, `--port 8080` moves the web port when 3001 is taken. It also reports which AI agents (Claude Code, Codex) your computer already has. The server runs in its own container and does not use those copies, so the image holds no agent CLI by default (each is 300 to 430 MB); `--agents claude-code` (or `codex`, or both) puts one in the image. The server's files and the agent sign-ins live on a Docker volume (`zetta_data`), so an update does not erase them. Every setting is listed in [docs/operations/settings.md](docs/operations/settings.md). The manual steps are on the [landing page](https://zettabot.app/#self-host).
+
+## Infrastructure
+
+What a machine needs to run the Zetta server. The installer checks the system, the container engine, the tools, the disk and the ports, and says what to fix.
+
+### The machine
+
+- **System:** macOS, Linux, or Windows through WSL, on x86-64 or ARM64.
+- **Container engine:** Docker or Podman, running, with the `compose` plugin.
+- **Tools:** Git and OpenSSL. With `curl`, the installer also confirms that Zetta answers before it ends.
+- **Disk:** about 3 GB free in the install folder (`~/zetta`), and about 6 GB more in the container engine's storage for the images. Each agent CLI you put in the image adds 300 to 430 MB. Your data grows on top of that.
+- **Memory:** the three containers below, plus what you turn on. Each running bot desktop uses about 1 GB (its limit is 2 GB and 2 CPUs by default), a browser or a bot run in a container has a limit of 1 GB, and a local speech model takes about 0.5 GB while loaded. Podman's default 2 GB machine fits one bot desktop at most: raise it with `podman machine set --memory 6144`.
+- **Ports:** 3001 for the web app (`--port` or `ZETTA_WEB_PORT` changes it), and on this computer only, 3000 for the API (`ZETTA_API_PORT`) and 5432 for Postgres. They must be free on the first install.
+- **Network:** outbound access to build the images (container registries, npm, GitHub) and to reach the model provider of each agent. Inbound, people only need the web port.
+
+### What runs
+
+| Container  | Image                                         | Listens on                                     | What it does                                                                  |
+| ---------- | --------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------- |
+| `web`      | nginx, built from `apps/web/Dockerfile`       | port 3001, every interface                     | Serves the app and forwards `/api` to the server. The one address people use. |
+| `server`   | Bun, built from `apps/server/Dockerfile`      | port 3000, `127.0.0.1` only (`ZETTA_API_BIND`) | The API, the bots' runs, routines, workflows and plugins.                     |
+| `postgres` | `pgvector/pgvector:pg18-trixie` (Postgres 18) | port 5432, `127.0.0.1` only                    | The database, with the `vector` extension for memory search.                  |
+
+The three restart by themselves (`restart: unless-stopped`) and have health checks. `docker-compose.yml` is the whole definition.
+
+### Data and secrets
+
+- **Two volumes hold everything.** `zetta_postgres_data` is the database: chats, bots, tasks, memory and settings. `zetta_data` is the server's disk: the files bots and people store, the bots' code folders, model downloads and the agent sign-ins. An update keeps both.
+- **Three `.env` files hold the configuration.** The installer writes them once, with new secrets, and never overwrites one: `apps/server/.env` (`BETTER_AUTH_SECRET`, `ZETTA_CONNECTION_KEY`, `ZETTA_SETUP_KEY`, `ZETTA_SERVER_URL`), `apps/web/.env` (`ZETTA_SERVER_URL`) and `.env` (the ports, the database password and the agent list). Every setting is in [docs/operations/settings.md](docs/operations/settings.md).
+- **Back up** both volumes and `apps/server/.env`. Without `ZETTA_CONNECTION_KEY` the stored account connections cannot be decrypted. What survives a restart is in [docs/operations/recovery.md](docs/operations/recovery.md).
+
+### Public address and HTTPS
+
+On one computer, `http://localhost:3001` is enough. For anyone else, give Zetta one public address with `--url https://zetta.example.com` and put a reverse proxy that terminates TLS (Caddy, nginx or a tunnel) in front of the web port. Sign-in from other computers and the plugins that use OAuth (Google, MCP clients) need `https://`. The proxy must pass WebSocket upgrades (voice, the bot desktop screen) and must not buffer server-sent events (`/api/events`).
+
+### AI agents
+
+Zetta has no model of its own. Each bot runs on an agent CLI on the server, with that agent's own sign-in: Claude Code, Codex, Pi, OMP, OpenCode or Cursor. `--agents claude-code` (or `codex`, or both) puts one in the server image; its sign-in is kept on `zetta_data`. Studio shows which agents the server has and which still need a sign-in.
+
+### Optional, by feature
+
+| Feature                                        | What it needs                                                                                                                                                                                 |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bot runs in throwaway containers               | `ZETTA_HARNESS_RUNTIME=docker`, the `docker/harness` image and a container engine the server can reach. Use it when the people on the server do not fully trust each other's bots.            |
+| Bot browsers in containers                     | `ZETTA_BROWSER_RUNTIME=docker`. Required once Zetta is open to the network.                                                                                                                   |
+| A Linux desktop per person ("computers")       | `ZETTA_DESKTOP_RUNTIME=docker` and the image built from `docker/desktop`. See [runtime modes](docs/operations/runtime-modes.md#desktop-computers-vms).                                        |
+| Voice notes and spoken calls                   | `ffmpeg` (the server image has it). A local speech model is downloaded on first use; a provider key is the alternative. See [voice and documents](docs/operations/voice-and-documents.md).    |
+| 1Password and Bitwarden plugins                | Their CLIs (`op`, `bw`, `bws`), which the server image has.                                                                                                                                   |
+| Phone numbers, mail, Slack, Telegram, WhatsApp | An account at the provider (for WhatsApp, your own WAHA server) and, for the ones that call Zetta back, the public `https://` address. Each has a page in [docs/operations](docs/operations). |
+| Several servers                                | `docker-compose.scale.yml`: API instances behind a load balancer, one worker, one shared files volume and one Postgres. See [scaling](docs/operations/scaling.md).                            |
+
+### Without containers
+
+Zetta also runs straight on the machine: [Bun](https://bun.sh) 1.3, the agent CLIs on the server's `PATH`, and a database. Leave `DATABASE_URL` empty and Zetta starts its own Postgres in `~/.zetta/postgres` (build its runtime once with `bun run db:runtime`: a C compiler, make, perl, bison and flex), or point `DATABASE_URL` at a Postgres 18 with the `vector` and `unaccent` extensions. The steps are in [TECH.md](TECH.md), and the difference between the two ways of running is in [runtime modes](docs/operations/runtime-modes.md). For a public server of your own, [Arch Linux on a VPS](docs/operations/vps.md) sets all of it up over SSH: `bun run infra bootstrap`, then `bun run infra deploy`.
 
 ## See it in action
 
@@ -61,16 +110,16 @@ The Chief reuses a bot whose description, skills or teams fit a role and hires o
 
 ## The experience
 
-1. **Configure a bot** through guided forms or a conversation with any bot—not only the chief. Explain its job and connect the accounts it needs. Use the same validation and authorization for both paths.
-2. **Try it in conversation.** A detected CLI or a saved form is not enough. The selected harness/account/model must produce a real response. The bot asks whether you are satisfied. Onboarding completes only after an explicit positive response; otherwise, continue adjusting and testing.
+1. **Configure a bot** through guided forms or a conversation with any bot, not only the chief. Explain its job and connect the accounts it needs. Both paths use the same validation and authorization.
+2. **Try it in conversation.** A detected CLI or a saved form is not enough: the selected agent, account and model produce a real response. The bot asks whether you are satisfied, and onboarding completes only after your explicit yes. Otherwise you keep adjusting and testing.
 3. **Give it work.** Talk directly to a specialist or ask your personal chief to orchestrate other bots. Work runs on the server, independently of an open browser tab.
-4. **Manage attention.** Sidebar and activity views use the same attention states. A dedicated task kanban shows pending work that needs you, who owns it, what completed, what is blocked, and the next action.
-5. **Recover without losing context.** Follow a connection/setup fix, return to the original task, and inspect retained results. A new attempt must not silently repeat uncertain external actions.
-6. **Improve and repeat.** Correct a result, retain the useful instruction or memory, and make the stable task a routine. Show what will repeat, when, using which bot and accounts, and where results will appear.
+4. **Manage attention.** The sidebar, Catch up and the task board use the same attention states. You see the work that needs you, who owns it, what completed, what is blocked, and the next action.
+5. **Recover without losing context.** Follow a connection or setup fix, return to the original task, and inspect the retained results. A new attempt never silently repeats an external action whose outcome is uncertain.
+6. **Improve and repeat.** Correct a result, keep the useful instruction or memory, and make the stable task a routine. Zetta shows what will repeat, when, with which bot and accounts, and where the results appear.
 
 ## What bots do
 
-Initial use cases include:
+Common uses:
 
 - Daily briefings coordinated by the chief.
 - Newsletters assembled from email newsletters, blogs, Reddit and X timelines.
@@ -86,14 +135,14 @@ Bots are autonomous once given the task and access. They do not ask for approval
 - **Authentication and authorization are enforced by the Zetta server**, not just used for auditing or UI hiding. External provider logins do not replace Zetta authorization.
 - Bots are team-visible by default and may be private. Shared bot definitions do not share users' conversations, credentials, files or memories.
 - Interactive work uses the requesting user's connections. Routines use their owner's connections. Delegation and visual workflows preserve that execution identity.
-- **Folders are visual teams of bots**, with inner groups for sidebar organization. Moving a bot into a folder does not grant access, transfer ownership, share accounts, or create another chief. Human membership/access is a separate concern.
+- **Folders are visual teams of bots**, with inner groups for sidebar organization. Moving a bot into a folder does not grant access, transfer ownership, share accounts, or create another chief. Human membership and access are a separate concern.
 - There is one installation admin. Administrative duties do not imply unrestricted access to private conversations or credentials.
 
-## V1 capabilities
+## Capabilities
 
 ### Bot configuration and onboarding
 
-Bots have names, personalities, instructions, skills, model/harness selection, hooks and integration bindings. Support these six installed server-side harnesses:
+Bots have names, personalities, instructions, skills, an agent and a model, hooks and integration bindings. A bot runs on one of the agents installed on the server:
 
 - Pi
 - Codex
@@ -102,7 +151,7 @@ Bots have names, personalities, instructions, skills, model/harness selection, h
 - OpenCode
 - Cursor
 
-Discover available harnesses and supported models, then guide the user through their account connection. Show actual capabilities and setup failures; do not pretend every harness supports every feature.
+Zetta finds the agents the server has and the models each supports, then guides you through the account connection. It shows actual capabilities and setup failures; it does not pretend every agent supports every feature. The new-bot page also starts from ten ready-made templates.
 
 The setup flow is **configure → verified conversation → satisfaction question → explicit confirmation → ready**. A negative answer returns to refinement. Silence, a model's self-assessment, or a reaction does not complete onboarding. Confirmation is bound to the configuring user and the tested bot configuration; it cannot grant teammates access to that user's account. Revoked credentials or incompatible configuration changes invalidate execution readiness.
 
@@ -110,97 +159,98 @@ The setup flow is **configure → verified conversation → satisfaction questio
 
 - Multiple private conversations with each bot.
 - Markdown composition and safe message rendering.
-- Bot mentions, file attachments as context, and authorized server-file references.
-- Message threads and reactions.
-- Durable bot/tool responses and multi-turn context across reconnects and restarts.
+- Bot mentions, file attachments as context (PDF, Office and CSV files are read on the server), and authorized server-file references.
+- Message threads, reactions, pins and polls.
+- Rooms, where several bots and people work in one conversation.
+- Voice: a microphone button, voice notes from Telegram and WhatsApp, and spoken calls with a bot.
+- Durable bot and tool responses, and multi-turn context across reconnects and restarts.
 - Publish an entire conversation as an **immutable, read-only team snapshot**.
 
-A snapshot shares conversation content at a fixed cutoff—not account access, bot configuration, underlying memory, or live server-file capabilities. Later private messages are not added. The viewer cannot reply, react, invoke bots or operate the original resources. Unsafe content must be handled explicitly before publication, never silently leaked.
+You can keep writing while a bot works: a later message reaches it at its next step and can correct an earlier one.
 
-### Attention and task kanban
+A snapshot shares conversation content at a fixed cutoff, not account access, bot configuration, underlying memory, or live server-file capabilities. Later private messages are not added. The viewer cannot reply, react, invoke bots or operate the original resources. Content that cannot be shared safely stops the publication with a reason; it is never silently leaked.
 
-Use a common model across sidebar, activity and the dedicated kanban: working/queued work, needs input, blocked, and new results. Keep attention separate from execution status: a failed run can require attention, while reading a result does not change whether the run succeeded.
+### Attention, tasks and projects
 
-The kanban focuses on pending items requiring user attention, with a resolved view for follow-up. Cards link to their originating chat, run, routine or workflow step. They identify the responsible bot, partial completion, safe next action and durable result. Resolving an item must reflect the actual underlying action; dragging a card cannot fabricate run success or approve a configuration change.
+The sidebar, Catch up and the task board share one model: working or queued work, needs input, blocked, and new results. Attention is separate from execution status: a failed run can require attention, while reading a result does not change whether the run succeeded.
 
-Start with in-app discoverability. External push/email/mobile notifications are not part of this scope.
+**Catch up** is one queue of the decisions that wait for you, such as an Approve card for a change a bot proposes. The **task board** moves work through backlog, in progress, blocked, review and done, and each card shows the bot that owns it. Cards link to their originating chat, run, routine or workflow step. Resolving an item reflects the actual underlying action: dragging a card cannot fabricate run success or approve a configuration change. **Projects** group the work toward one outcome, and the **organization chart** shows who every person and bot reports to; bots escalate along it.
 
 ### Schedules, routines and visual workflows
 
-**Visual workflows are included in v1.** Create a workflow from conditions and bot tasks, inspired by [n8n](https://n8n.io/). The RFCs define a bounded first graph model and editor; full n8n feature parity is not the goal.
+Routines run tasks or published workflows on a schedule you write as plain text ("every weekday at 8") or as cron. The agenda shows what runs when, and syncs both ways with the main calendar of each Google account you connect. Before activation, Zetta explains the task, bot, schedule and timezone, next occurrence, context policy, account bindings and result destination. Test runs perform real work and are labeled accordingly.
 
-Routines run tasks or published workflows on a schedule. The calendar should reuse the calendar from `@g4rcez/components` once its supported API/dependency is verified. Before activation, explain the task, bot, schedule/timezone, next occurrence, context policy, account bindings and result destination. Test runs perform real work and must be labeled accordingly.
+Visual workflows connect bot tasks, conditions, waits, approvals, loops and tool steps on a canvas, in the spirit of [n8n](https://n8n.io/). A run shows the output of each step. Full n8n feature parity is not the goal.
 
-Successful chat work should connect naturally to reusable instructions and routines. Users can configure through forms or chat, with the same server-side validation, preview and version/conflict rules.
+Successful chat work connects naturally to reusable instructions and routines. You configure through forms or chat, with the same server-side validation, preview and version and conflict rules.
 
-### Playground
+### Playground and apps
 
 Bots and people write code, run it and keep the result. A playground has several files, typed inputs and a history of runs. It runs on the server host, in a container per language, or in the browser (HTML, JavaScript, TypeScript), and a script can leave files in `out/` (a report as a page, a chart as an image). A bot makes and runs one with the `zetta:playground` tool, and you open, change and run it again at `/playground`. Examples, limits and setup: [docs/operations/playground.md](docs/operations/playground.md).
 
+Apps give bots new tools, with approvals and their own pages, and a bot can build one in chat: [docs/operations/apps.md](docs/operations/apps.md).
+
 ### Browser and computer use
 
-**Both are essential to v1**, not optional future scope.
+- Browser automation through [agent-browser](https://agent-browser.dev/).
+- Computer use on a private Linux desktop that runs on your server, driven by [Cua](https://github.com/trycua/cua) or [agent-desktop](https://github.com/vercel-labs/agent-desktop). Saved machines are also reached over SSH, SFTP and FTP.
+- Persistent browser profiles, configurable per bot: dedicated or explicitly shared among that user's bots. Profiles are never shared across users, and sharing is never inferred from folder placement.
+- Isolated user-owned computer sessions, bounded actions and cleanup, with clear unsupported and setup states.
+- Secure user takeover for login, MFA or other human steps, followed by explicit hand-back. Secrets do not enter chat, screenshots retained as results, memory or published snapshots.
 
-- Browser automation through [agent-browser](https://agent-browser.dev/) or an approved equivalent integration path.
-- Computer use through an evidenced harness capability or [CUA](https://github.com/trycua/cua); verify the actual backend before implementation.
-- Persistent browser profiles, configurable per bot: dedicated or explicitly shared among that user's bots. Never share profiles across users or infer sharing from folder placement.
-- Isolated user-owned computer sessions, bounded actions and cleanup, with clear unsupported/setup states.
-- Secure user takeover for login, MFA or other human steps, followed by explicit hand-back. Secrets must not enter chat, screenshots retained as results, memory or published snapshots.
-
-The exact runtime/provider is a technical gate. The product requirement is settled. The server host's unrestricted desktop is not the default execution environment.
+The server host's unrestricted desktop is not the execution environment. Setup: [docs/operations/runtime-modes.md](docs/operations/runtime-modes.md).
 
 ### Decisions and hooks
 
-Integrate **Jev and Laya** for decisions. Verify the products, protocols and data handling; do not replace them with a home-grown decision model.
+A decision model picks one of your answers without spending tokens: **Laya** is built in, free and private, and **Jev** is hosted by Typesafe and uses your own key.
 
-Hooks behave like [Express middleware](https://expressjs.com/en/5x/guide/using-middleware/): they can add context, transform/redact messages, skip a model call, or enqueue owned background work. Order, errors, deadlines and outcomes must remain visible. Hooks cannot change the initiating user's authority.
+Hooks behave like [Express middleware](https://expressjs.com/en/5x/guide/using-middleware/): they can add context, transform or redact messages, skip a model call, or enqueue owned background work. Order, errors, deadlines and outcomes remain visible. Hooks cannot change the initiating user's authority.
 
-### Persistent memory, instructions and self-learning
+### Memory, skills and learning
 
-Use a **Hermes-style persistent memory mechanism**, with its exact reuse/integration approach established by the relevant RFC.
-
-- **Memory:** durable facts, preferences, decisions, corrections and context.
-- **Instructions:** reusable procedures with triggers, steps, constraints and verification.
+- **Memory:** durable facts, preferences, decisions, corrections and context, as items with tags, links and a search that can run on a model on your own server.
+- **Skills:** reusable procedures with triggers, steps, constraints and verification, from your library or the GitHub marketplace.
 - **Configuration:** the bot's behavior and setup. Bot-proposed changes require a visible diff and explicit authorized approval before application.
 
-The loop is visible: find the knowledge behind an incorrect result, correct or forget it, and verify that a later task uses the correction. Historical messages and published snapshots remain historical. Private knowledge is not automatically promoted to shared scope. Self-learning does not mean model training.
+The loop is visible: find the knowledge behind an incorrect result, correct or forget it, and check that a later task uses the correction. Once a day Zetta reads a bot's chats with you and keeps a lesson only when your own words support it; a new lesson goes on trial and is dropped when it does not help. Historical messages and published snapshots remain historical. Private knowledge is not automatically promoted to shared scope. Self-learning does not mean model training.
 
 ## Connected apps and plugins
 
-Connect each app to the **user's Zetta account**, not globally to the server. A shared bot declares what integration it needs; each user binds their own account. Credentials stay out of bot definitions and model context.
+Each app is connected to the **user's Zetta account**, not globally to the server. A shared bot declares what integration it needs; each user binds their own account. Credentials stay out of bot definitions and model context.
 
-The integration vision includes:
+Plugins include:
 
-- Google Workspace: Gmail, Calendar and Drive
-- GitHub, X/Twitter and Reddit
-- Slack and Discord
-- Sentry, Cloudflare and Linear
-- Home Assistant and Pi-hole
+- Google Workspace: Gmail, Calendar, Drive, Docs and Sheets
+- Microsoft mail, and any mailbox over IMAP and SMTP
+- GitHub, Linear, Notion, Sentry, PostHog, Cloudflare, Vercel and Supabase
+- Slack, Telegram and WhatsApp, to talk to your bots from outside
+- Reddit, Trello, Figma, Canva, Obsidian and calendar feeds (ICS)
+- Home Assistant
 - Bitwarden, 1Password and OpenBao
+- Phone numbers through Telnyx or Twilio, and voices through ElevenLabs
 
-Use supported MCP servers or installed CLI integrations, with a focused adapter per integration where needed. Verify compatibility, purpose, permissions and OAuth scopes. Listing an app here does not claim that a connector exists or make every bespoke connector a v1 release requirement. The marketplace remains later work; connected-app configuration is in v1.
+Any MCP server an administrator allows can be added beside them. Each plugin has a page in [docs/operations](docs/operations) with its permissions and setup. Zetta is also an MCP server itself (`/api/mcp`), so Claude Code or Cursor can work as a member of your team under the same permission checks as the web app.
 
 ## Boundaries
 
-- Local authentication, ownership enforcement and runtime isolation are required now.
-- Configurable per-bot action permissions are later work; privacy is not deferred.
-- A visual workflow editor is in v1; a visual team-map canvas and app marketplace are not.
-- No automatic retry of external actions whose outcome is unknown, and no promise of universal harness resume.
-- No separate artifact-management product: durable result links are sufficient initially.
-- No model training, billing platform, public SaaS tenancy or new native desktop client in this release.
+- Local authentication, ownership enforcement and runtime isolation are always on.
+- Three kinds of action wait for your approval: deleting files, administrator commands and sending email. Every change a bot proposes is an Approve card too.
+- No automatic retry of external actions whose outcome is unknown, and no promise that every agent can resume a stopped run.
+- No separate artifact-management product: results stay linked to the work that made them.
+- No model training and no billing platform. Zetta runs on a server you control.
 
 ## Interface references
 
-Use existing shared UI primitives and Tailwind styles. The [shadcn chat components](https://ui.shadcn.com/docs/changelog/2026-06-chat-components) and supplied screenshots guide the chat-first layout, routine calendar, connection readiness and bot grouping. Borrow clear interactions, not only visual styling.
+The interface uses the shared primitives of [`@g4rcez/components`](https://github.com/g4rcez/components) and Tailwind styles. These products shaped the chat-first layout, the routine agenda, connection readiness and bot grouping:
 
-- [Grok Bot](https://x.ai/bot) — persistent bots, task handoffs, skills and routines.
-- [MausBot](https://mausbot.com/) — familiar bot management and provider setup.
-- [OpenClaw](https://openclaw.ai/) — persistent context and action in connected tools.
-- [agentes.chat](https://agentes.chat/) — conversational agent collaboration.
-- [Codync](https://github.com/leepokai/Codync) — harness-backed bots and attention to completed/blocked work.
-- [n8n](https://n8n.io/) — visual workflows and inspectable execution.
+- [Grok Bot](https://x.ai/bot): persistent bots, task handoffs, skills and routines.
+- [MausBot](https://mausbot.com/): familiar bot management and provider setup.
+- [OpenClaw](https://openclaw.ai/): persistent context and action in connected tools.
+- [agentes.chat](https://agentes.chat/): conversational agent collaboration.
+- [Codync](https://github.com/leepokai/Codync): harness-backed bots and attention to completed and blocked work.
+- [n8n](https://n8n.io/): visual workflows and inspectable execution.
 
-These are product references, not promises of identical behavior. Zetta keeps its own private-chat, per-user chief, account ownership and snapshot model.
+Zetta keeps its own private-chat, per-user chief, account ownership and snapshot model.
 
 ## License
 

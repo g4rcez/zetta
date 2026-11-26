@@ -34,6 +34,4 @@ Other calendars: `calendar_list_calendars` returns calendar ids, and `calendar_l
 
 ## Not changed
 
-The Agenda sync still reads and writes only the primary calendar of each account and sends no invitations. Accounts connected with only `calendar.readonly` are not used by the Agenda sync (it needs an events permission). The scope picker in the Google plugin page is a fixed list in the web app (`features/plugins/google-connect.tsx`): the new `calendar.readonly` permission has to be added there as a row (`{ id: "calendar.readonly", group: "Calendar", label: "See your calendars and when you are busy" }`) before people can tick it.
-
-Not verified against the live service: the endpoints and scopes follow Google's Calendar API reference (checked in November 2026); the tests use a fake Google. No real Google account or Cloud project was used.
+The Agenda sync still reads and writes only the primary calendar of each account and sends no invitations. Accounts connected with only `calendar.readonly` are not used by the Agenda sync (it needs an events permission). The scope picker in the Google plugin page lists it as "See your calendars and when you are busy".

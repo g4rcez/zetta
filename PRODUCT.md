@@ -31,7 +31,7 @@ Self-hosted, one admin per installation. The server runs six harnesses (Pi, Code
 - Attention model shared by sidebar, activity and task kanban: working/queued, needs input, blocked, new results; kept separate from execution status.
 - Routines, agenda, studio, computer (VM) use, folders as visual teams of bots.
 - Bots are team-visible by default, may be private; sharing a bot never shares conversations, credentials, files or memories.
-- In-app notifications only for now; no external push/email.
+- Attention is requested in the app. People also reach their bots from Telegram, WhatsApp, Slack and mail.
 - Vocabulary: chief, bots, folders, routines, attention.
 - Web navigation must use TanStack Router links (see CLAUDE.md).
 
@@ -41,7 +41,7 @@ Name "Zetta". "Chief" terminology is binding. Default flows avoid technical jarg
 
 ## Evidence on Hand
 
-Product definition in README.md, docs/intent/zetta-v1.md and docs/wiki/. No customer testimonials, benchmarks or pricing exist; do not fabricate them.
+Product description in README.md and docs/wiki/. No customer testimonials, benchmarks or pricing are published; do not fabricate them.
 
 ## Product Principles
 

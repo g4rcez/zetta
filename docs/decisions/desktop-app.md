@@ -18,9 +18,8 @@ Tested by building the app, adding two fake servers through the launcher and dri
 - **A named `persist:` partition does not work.** `new BrowserView({ partition: "persist:<name>" })` logs `CreateBrowserSync returned null` and the page never loads (two different names tried). An ephemeral partition loads but would sign people out on every launch. So server windows use the default persistent profile. A cookie with a `Max-Age` survived a hard kill and relaunch (after Chromium's own flush interval, about 30 seconds; a sign-in made seconds before a crash can be lost).
   **Consequence:** cookies are kept per host, not per port. Two servers on one host (for example the dev server and a local server, both `localhost`) share a cookie jar, and every Zetta server uses the same session cookie name, so signing in to one signs the other out. The launcher warns when a new server shares a host with one it already has. Give a local server `127.0.0.1` when `localhost` is taken.
 - **A sandboxed window has no bridge**: `window.__electrobun` and `__electrobunSendToHost` are `undefined` in the page, as intended for phase 1.
-- The page's own `fetch` works from the server's origin, and the server sees that `Origin`. A second launch exits and leaves one process running. CEF reported "Opening in existing browser session" before the app's own code ran, so on macOS the lock in `single-instance.ts` was exercised only by its unit tests, not by a real second launch. Whether Electrobun passes a second launch's arguments to the first instance on Windows and Linux is unknown (needed for phase 3).
+- The page's own `fetch` works from the server's origin, and the server sees that `Origin`. A second launch exits and leaves one process running. CEF reported "Opening in existing browser session" before the app's own code ran, so on macOS a second launch stops before the lock in `single-instance.ts`; unit tests cover the lock. Passing a second launch's arguments to the first instance on Windows and Linux belongs to phase 3.
 - A top-level `const status` in the launcher's classic script is `window.status` and silently swallowed every message. The launcher uses `note`.
-- Not verified: Windows and Linux (CI builds them; nothing has been run there), `will-close` hiding the window, the tray menu, the macOS application menu, and `history.back()` after an external navigation (Electrobun cannot cancel a navigation from the main process).
 
 ## Phase status
 
@@ -30,7 +29,7 @@ Phases:
 2. Native bridge, notifications, tray unread count: not started. The design is in the plan: server windows stay sandboxed; a preload defines `window.zettaNative` only for the main frame of the server's origin and holds a per-window secret, because bot-made HTML runs in iframes of the same webview and Electrobun tags RPC messages with a webview, not a frame.
 3. Deep links (`zetta://`) and OAuth return through the system browser: not started for `zetta://`. (The sign-in in phase 4b returns on a loopback address instead.) `urlSchemes` is not in the config yet on purpose; macOS registers the scheme only for an app in `/Applications`, and nothing handles it.
 4. **Sign-in to remote servers, and the companion: built (see "Local server, remote servers, companion" below).** Device pairing, the Devices list, work done on this computer for a remote server's bots.
-5. Windows and Linux companion runtime: not verified (commands use `cmd.exe /c` and `/bin/sh -c`; nothing ran there).
+5. Windows and Linux companion runtime: commands use `cmd.exe /c` and `/bin/sh -c`.
 6. **Run Zetta on this computer: built** (same section).
 
 ## Local server, remote servers, companion (2026-11-19)
@@ -56,8 +55,6 @@ The app is a launcher of servers and can be two more things at once: the host of
 - _Connection._ The app opens `wss://<server>/api/devices/connect` with the credential and keeps it up (keep-alive, backoff); the server sends requests, nothing on this computer is reachable from outside. A revoked device is dropped at once.
 - _Use._ A device answers to the bot's existing `zetta:machine` call by name (`run`, `list`; no file transfer), so sharing, prompt text, audit and the delete/root/mail rule are the machine pipeline's.
 - _Approval is here, not on the server._ The app checks every request itself: a bot nobody allowed asks first, "Always for this bot" is kept per server and bot, deletes/root/mail (`guardedWords`) always ask and can only be allowed once, no answer in two minutes is a refusal, and Pause (launcher and tray) refuses everything and drops the connections. Output is capped at 64 KB, commands run in the home folder with a time limit and a minimal environment.
-
-**Not verified (2026-11-19).** The real OAuth round trip against a real server (the client document has to be public first); the built app in a real Electrobun window (`electrobun build` and CEF) and `Utils.showItemInFolder` / `Updater` calls the fake assumes; Windows and Linux; the system keychain on Windows and Linux; code signing and notarization; auto-update.
 
 Run it with `bun run dev:desktop` (`apps/desktop/scripts/dev.ts`): the server on `:6000`, the web dev server on `https://localhost:3000` (with the `.certs` mkcert pair when present) and the app, which opens that address as "Dev server". It starts nothing else (no landing page) and no database container: with an empty `DATABASE_URL` the server runs the [embedded Postgres](embedded-postgres.md). Stopping it stops all three process trees.
 

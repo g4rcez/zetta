@@ -1,10 +1,8 @@
 # Versioned bot configuration and actor readiness
 
-Status: design accepted by coordinator after [independent CLEAR review](../reviews/bot-configuration-020a-review.md),2026-10-22. Design only. Pure020b implementation may be separately assigned; schema, service, route, browser, native harness and database gates remain explicit. RFC-020 remains incomplete. Only this acceptance status was added after the reviewed content freeze.
-
 ## Reused policy and boundaries
 
-Sources: [confirmed intent](../intent/zetta-v1.md), [ownership](ownership.md), [connections](connection-secrets.md), [durable runs](durable-runs.md), [dispatch](durable-dispatch.md), [harness research](harness-compatibility.md), [020](../../tasks/020-implement-versioned-bot-configuration.md) and [021](../../tasks/021-build-bot-onboarding-and-settings.md). The issued-actor and fresh-membership boundary from RFC-005 and closed capability contract from RFC-006 remain mandatory.
+Sources: [confirmed intent](../intent/zetta-v1.md), [ownership](ownership.md), [connections](connection-secrets.md), [durable runs](durable-runs.md), [dispatch](durable-dispatch.md), [harness research](harness-compatibility.md). The issued-actor and fresh-membership boundary from RFC-005 and closed capability contract from RFC-006 remain mandatory.
 
 A specialist defaults to team visibility. Its owner alone edits, changes visibility or archives it. Active B may use a team bot with B's own accounts and B's readiness. Admin has exactly the same private-content restrictions. A chief is private and unique per owner, including archived chiefs; creating another chief cannot evade that identity. No editor lists, organization model, ownership transfer or new RBAC system.
 
@@ -16,13 +14,13 @@ No harness is made operational by this proposal. Accepted research establishes c
 
 These are proposed logical records, not existing tables. Schema assignments must name their actual columns and constraints before generation. Use UUID server-generated identities, positive PostgreSQL int32 revisions/versions, UTC timestamps and restrictive deletes. No foreign key to a future resource table.
 
-| Record | Minimal fields and ownership |
-| --- | --- |
-| Bot | id, immutable owner user, kind chief/specialist, visibility private/team, lifecycle active/archived, current configuration version, lifecycle/configuration revision, presentation revision, name, description, created/updated/archive timestamps. Chief must be private; unique owner chief identity. |
-| Configuration version | bot id + sequential version, immutable canonical share-safe execution definition, schema version 1, creation time. Configuration identity exposed to RFC-009 is bot id plus this version; no second independent configuration counter. |
-| Actor binding version | actor user + bot id + sequential version, immutable canonical private binding snapshot and creation time. No shared default account. Latest version is selected under bot/member locks; absence means unconfigured. |
-| Setup session | id, actor/bot/configuration/binding identities, exact canonical readiness descriptor and digest, bounded state, trusted native response evidence reference, confirmation challenge and times. Private to actor. |
-| Mutation receipt | actor + operation UUID unique, method and exact bounded canonical arguments, original safe result. Private, retained for same-operation repair; never a credential or instruction log. |
+| Record                | Minimal fields and ownership                                                                                                                                                                                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bot                   | id, immutable owner user, kind chief/specialist, visibility private/team, lifecycle active/archived, current configuration version, lifecycle/configuration revision, presentation revision, name, description, created/updated/archive timestamps. Chief must be private; unique owner chief identity. |
+| Configuration version | bot id + sequential version, immutable canonical share-safe execution definition, schema version 1, creation time. Configuration identity exposed to RFC-009 is bot id plus this version; no second independent configuration counter.                                                                  |
+| Actor binding version | actor user + bot id + sequential version, immutable canonical private binding snapshot and creation time. No shared default account. Latest version is selected under bot/member locks; absence means unconfigured.                                                                                     |
+| Setup session         | id, actor/bot/configuration/binding identities, exact canonical readiness descriptor and digest, bounded state, trusted native response evidence reference, confirmation challenge and times. Private to actor.                                                                                         |
+| Mutation receipt      | actor + operation UUID unique, method and exact bounded canonical arguments, original safe result. Private, retained for same-operation repair; never a credential or instruction log.                                                                                                                  |
 
 Only existing membership/user identities, existing connection identities, and records introduced in the same accepted feature may have FKs. Connection binding ownership/version needs the accepted composite connection identity, not merely a globally valid connection UUID. Instruction, skill, hook, memory and native-profile reference backends require their own accepted ownership/version contracts before enabling those slots; initially reject nonempty unsupported slots, rather than treating opaque strings as validated resources.
 

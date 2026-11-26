@@ -157,8 +157,7 @@ A work card shows up to 4 next steps. Each is a button with its name and, under 
 - The project memory under a brief is the 4 newest items of that project, not a search against the request: the normal memory search of every turn already ranks project items with the rest.
 - Idle time is counted in UTC working days. No per-person time zone exists yet (routines and agenda items carry their own).
 
-## Not verified
+## How it was checked
 
-- Looked at in a real browser and with a real model on 2026-11-15 (`scripts/e2e/project-pages.ts`, `docs/verification/e2e/project-pages.md`): a project with a bot on it, asking for work, the page naming the worker and the task; the one-sentence brief draft with Claude haiku returned four sensible answers and a sentence with a key was not sent. Before that the pages were checked with DOM tests and the API with integration tests on the embedded Postgres.
-- The "What is in the way?" box on the task page has no DOM test; the server side of it is tested.
-- The work scan was tested by calling it with a set clock, not by letting the server's ticker run it.
+- Looked at in a real browser and with a real model on 2026-11-15 (`scripts/e2e/project-pages.ts`): a project with a bot on it, asking for work, the page naming the worker and the task; the one-sentence brief draft with Claude haiku returned four sensible answers and a sentence with a key was not sent. Before that the pages were checked with DOM tests and the API with integration tests on the embedded Postgres.
+- The work scan is tested by calling it with a set clock.

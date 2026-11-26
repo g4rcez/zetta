@@ -1,6 +1,6 @@
 # Multiplayer rooms
 
-Status: confirmed intent. Authority: the user confirmed the statement of intent in the product interview. The work is RFC-089 in [TASKS.md](../../TASKS.md#22-multiplayer-rooms). This intent changes one rule in [zetta-v1](zetta-v1.md) and [ownership](../decisions/ownership.md): a published snapshot is no longer the only way to share a conversation. Everything else in those documents stays.
+Status: confirmed intent. Authority: the user confirmed the statement of intent in the product interview. This intent changes one rule in [zetta-v1](zetta-v1.md) and [ownership](../decisions/ownership.md): a published snapshot is no longer the only way to share a conversation. Everything else in those documents stays.
 
 ## Intent
 

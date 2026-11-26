@@ -115,7 +115,7 @@ A page may import only its own files, or a library from a public URL such as `ht
 | Container   | One long-lived container per CLI (`bun` serves TypeScript and JavaScript). No capabilities, read-only root, memory, CPU and process limits. Runs of one language share the container. |
 | Browser     | The page runs it in a sandboxed frame. The server only builds it.                                                                                                                     |
 
-Any active member can use the server host runner, as members can already create bots that run commands. If the host lacks the CLI (`bun`, `python3` or `bash`), the playground page says so and offers the other runners.
+On a local install any active member can use the server host runner, as members can already create bots that run commands. Once Zetta is open to the network it is off until an administrator saves the setting `hostRunner` as On ([server settings](server-settings.md)), with Docker too: the script runs as the server's own user and can read what the server can. If the host lacks the CLI (`bun`, `python3` or `bash`), the playground page says so and offers the other runners.
 
 ## Set up the container runner
 

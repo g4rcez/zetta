@@ -31,5 +31,3 @@ The reader is our own (about 500 lines, no dependency): the feed is read-only an
 
 - One link per person. Use a calendar that combines the others, or Google Calendar, for more.
 - The events are read when the Agenda is read; they are not copied into the Agenda, so they have no reminders and cannot be completed, moved or sent to Google. Copying them in would need a place to keep them (a `source` value and an external id on `agenda_item`), which is a schema change.
-
-Not verified against the live service: tested with sample feeds only, no real Google, Outlook or iCloud address was used.

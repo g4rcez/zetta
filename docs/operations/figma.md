@@ -27,5 +27,3 @@ Every tool takes `file`: a Figma link (`figma.com/design/<key>/...`, also `file`
 - The token is sent only to `api.figma.com`, redirects are never followed, and the token is in no result, error or card.
 - Rendered images are downloaded only from the address Figma's image service returns, and only when its host is Figma's own storage (`figma-*.s3.*.amazonaws.com` or `*.figma.com`), over https, without the token. Any other address is refused, so a private network address is never fetched.
 - A 429 answer says how long Figma asks to wait (`Retry-After`) and, for Viewer or Collab seats, that the seat has a low request limit.
-
-Not verified against the live service: the endpoints, parameters and scopes follow Figma's public REST API reference (checked in November 2026), and the tests use a fake Figma. No real token or file was used. Try it with a real token before relying on it, in particular the image host check against a real render.

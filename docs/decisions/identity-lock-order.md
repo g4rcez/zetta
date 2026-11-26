@@ -1,6 +1,6 @@
 # Identity and resource lock-order normalization proposal
 
-Status: per-account design accepted after [independent005f1 review](../reviews/identity-lock-order-005f1-review.md),2026-10-22. Later [005f2 reproduced the current defect](../reviews/identity-lock-order-005f2-review.md);005f3 implemented the correction and [005f4 actual positive/session controls passed](../reviews/identity-lock-order-005f4-review.md). No schema change was part of this correction. Future020 services still own their actual implementation/proof. The design body below records the source-derived proposal; linked later receipts establish completed behavior.
+Date: 2026-10-22. The correction described here is implemented, with no schema change.
 
 ## Observed source and risks
 

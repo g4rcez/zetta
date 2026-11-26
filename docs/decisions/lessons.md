@@ -53,11 +53,10 @@ Three constraints hold for every part: it is cheap in tokens (the daily reading 
 - The setting `lessonBatch` (Studio > Server settings) turns the daily reading on or off for the installation. The setting `lightRuns`, when on, runs the batch engine call without the host's plugins, skills and tools (`--setting-sources project --strict-mcp-config --disable-slash-commands --tools=`; never `--bare`, which reads only an API key and would break subscription logins). Measured on 2026-11-18 with `scripts/e2e/light-run-compare.ts` (3 runs each way, the daily reading prompt, Haiku): 45.9k tokens plain against 4.9k light (89% fewer), but only 75% of the candidates matched between the two sides, under the 80% bar. **The default stays off.** A person can turn it on for the installation if they accept that trade; the comparison is worth running again with more runs and a second machine.
 - Per person (Lessons page and the bot's page): reading `daily` or `off`, forgetting `on` or `off`, tidy-up `weekly` or `off`, trial `strict`, `normal` or `loose`.
 
-## Not done
+## Limits
 
 - No training, no outside memory service, and no model judging whether an answer was good: only what the person did.
 - Items that are always in the prompt (profile, notes) and reads by outside MCP clients cannot be measured, so they show as _unclear_ at best.
 - A bot that someone else owns never feeds a batch, and its replies are not counted for its owner's lessons.
 - The "without" side of a paired test uses the same fallback engine rules; a fallback harness may still load the person's skills on that side.
-- The real-model run (`scripts/e2e/lessons-batch.ts`, 2026-11-18, one chat day with a rule said outright, a correction made in two chats and a passing remark) was green, but it is one small scenario: it says nothing yet about a month of real chats.
-- The Chief cannot read the tidy-up suggestions or the weekly trend yet.
+- The Chief cannot read the tidy-up suggestions or the weekly trend.

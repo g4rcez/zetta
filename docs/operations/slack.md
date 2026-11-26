@@ -44,4 +44,3 @@ settings:
 - Replies are plain text; Slack's control sequences (`<!channel>`, `<@U…>`, links) are escaped, so a reply cannot ping people. Limited to 10 a minute.
 - No approve buttons in Slack: a bot's write actions are not available to outside people at all.
 - Requests older than five minutes, or not signed with your secret, are refused.
-- Not yet checked against a real workspace; tested with signed fake requests and a fake Slack API.

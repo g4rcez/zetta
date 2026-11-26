@@ -10,7 +10,7 @@ Zetta runs as one process by default (`ZETTA_ROLE=all`). To spread HTTP traffic 
 | `api`           | HTTP: reads, writes, auth, server-sent events (`/api/events`). Never starts a turn, a ticker, boot recovery, a sweep, a routine job or a VM service.                                                                                                               |
 | `worker`        | Everything an `api` does, plus all work that owns running things: bot turns and their streams, the 30 s ticker (agenda, memory, knowledge, discussions, inbound, loops, queue), boot recovery, routine jobs, harness containers, browsers, VMs and the Laya model. |
 
-Run **exactly one worker**. Two workers are not supported yet (see "Not covered yet"). You can restart, add and remove `api` instances at any time: they own no running work, so restarting one marks nothing as interrupted.
+Run **exactly one worker**. Two workers are not supported (see "Limits"). You can restart, add and remove `api` instances at any time: they own no running work, so restarting one marks nothing as interrupted.
 
 ## What goes where
 
@@ -54,12 +54,10 @@ Every process registers in `server_instance` and writes a heartbeat every 10 s (
 - **`ZETTA_RECOVERY=legacy`** restores the old behaviour (every `running` row is recovered) if you need it.
 - **Claims are safe across instances:** one running queued answer per conversation (unique index), discussion turns are claimed one at a time under an advisory lock, a goal loop is driven by the instance that holds its lease, routine runs and inbound, memory, knowledge and agenda work use atomic claims.
 
-## Not covered yet
+## Limits
 
-These need a turn event log and a few more tables, and are planned in this order:
-
-1. **Turns still need one worker.** The turn registry is in the worker's memory, and so is the check that a conversation has no turn running. Two workers could start two turns in one chat, and a stream or a cancel only works on the instance that runs the turn.
-2. **Turns run and stream on the worker.** Turn events live in the worker's memory, so `api` instances cannot serve a stream. A shared `turn_event` log in Postgres would let any instance serve it, and let `api` start turns through a queue.
-3. **The sign-in rate limit** is counted in memory by default, so N instances allow N times as many attempts. Set `ZETTA_AUTH_RATE_LIMIT_STORAGE=database` (the scale compose file does) to share the counters. The transport key is why the sealed-credential endpoints above go to the worker; it moves to a shared store later (the `transport_key` table is reserved for it).
+1. **Turns need one worker.** The turn registry is in the worker's memory, and so is the check that a conversation has no turn running. Two workers could start two turns in one chat, and a stream or a cancel only works on the instance that runs the turn.
+2. **Turns run and stream on the worker.** Turn events live in the worker's memory, so `api` instances cannot serve a stream.
+3. **The sign-in rate limit** is counted in memory by default, so N instances allow N times as many attempts. Set `ZETTA_AUTH_RATE_LIMIT_STORAGE=database` (the scale compose file does) to share the counters. The transport key is why the sealed-credential endpoints above go to the worker.
 4. **Installation settings** (network mode, Laya) are read at boot and applied by the instance that saved them; restart the others after a change.
 5. **VNC tickets and browser sessions** are in the worker's memory: they stay there by design.

@@ -1,8 +1,6 @@
 # Fixture claim and capacity transaction foundation
 
-Status: revised design accepted after [coordinator independent review](../reviews/dispatch-claim-design-010c3-review.md),2026-10-22. Design only; pure codec/row implementation may be separately assigned. No schema, database, worker, launcher or provider execution is authorized here. Only acceptance status changed after the reviewed freeze.
-
-Inputs: [010a dispatch](durable-dispatch.md), [010c1 storage](dispatch-storage.md), [010c2 schema](../../tasks/010c2-implement-dispatch-schema.md), [010c2a actual structural proof](../reviews/dispatch-schema-010c2a-review.md), [010b1 pure contract](../../tasks/010b1-define-dispatch-action-contract.md), [009 runs](durable-runs.md), [007 connections](connection-secrets.md). Structural56-scenario SQL proof does not establish capacity enforcement, backend authority or genuine resource cleanup.
+Inputs: [010a dispatch](durable-dispatch.md), [010c1 storage](dispatch-storage.md), [009 runs](durable-runs.md), [007 connections](connection-secrets.md).
 
 ## Selected boundary
 

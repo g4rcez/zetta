@@ -1,8 +1,10 @@
-# tech
+# Development
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Router, Elysia, and more.
+How to work on Zetta's code. To run Zetta, see [Install](README.md#install) and [Infrastructure](README.md#infrastructure) in the README.
 
-## Features
+The workspace started from [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack): React, TanStack Router, Elysia and more, in TypeScript.
+
+## Stack
 
 - **TypeScript** - For type safety and improved developer experience
 - **TanStack Router** - File-based routing with full type safety
@@ -102,7 +104,7 @@ Run standalone Node/Bun tools that use Varlock from the owning app directory so 
 - Deploy: bun run deploy:infra
 - Destroy: bun run destroy
 
-`alchemy profile edit` stores the selected Axiom, Cloudflare, Neon, PlanetScale, and/or Prisma provider profiles under `~/.alchemy`; no provider-specific setup command is required by this scaffold.
+`alchemy profile edit` stores the selected Axiom, Cloudflare, Neon, PlanetScale, and/or Prisma provider profiles under `~/.alchemy`; no provider-specific setup command is required.
 
 Deploys are staged and default to a personal `dev_<username>` stage. For production, run the deploy with an explicit stage from `packages/infra`:
 
@@ -115,7 +117,7 @@ For a deployed Docker image, pass `AXIOM_API_KEY`, `AXIOM_DATASET`, and `AXIOM_E
 
 ### Docker Compose
 
-- Target: web + server
+- Target: web + server + Postgres
 - Config: `docker-compose.yml` (app Dockerfiles live in `apps/*/Dockerfile`)
 - Build images: bun run docker:build
 - Start: bun run docker:up
@@ -135,12 +137,24 @@ For more details, see the guide on [Deploying with Docker Compose](https://www.b
 ```
 zetta/
 ├── apps/
-│   ├── web/         # Frontend application (React + TanStack Router)
-│   └── server/      # Backend API (Elysia)
+│   ├── web/         # Web app (React + TanStack Router)
+│   ├── server/      # API and everything that runs (Elysia)
+│   ├── desktop/     # Desktop app (Electrobun)
+│   ├── cli/         # The `zetta` command line
+│   └── landing/     # Public site (Astro)
 ├── packages/
 │   ├── ui/          # Shared shadcn/ui components and styles
 │   ├── auth/        # Authentication configuration & logic
-│   └── db/          # Database schema & queries
+│   ├── db/          # Database schema, migrations and the embedded Postgres
+│   ├── core/        # Types and rules shared by the web app and the server
+│   ├── harness/     # The agents a bot can run on, and their models
+│   ├── laya/        # The built-in decision model
+│   ├── render/      # Rendering of bot-made interface blocks
+│   ├── config/      # Shared TypeScript configuration
+│   └── infra/       # Alchemy deployment (observability)
+├── docker/          # Images for bot runs, browsers, desktops and the scale example
+├── docs/            # Wiki, operations and decisions
+└── scripts/         # Installer helpers, end-to-end checks and fixtures
 ```
 
 ## Available Scripts

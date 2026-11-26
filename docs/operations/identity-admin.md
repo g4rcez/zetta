@@ -1,15 +1,13 @@
-# Existing-account installation admin command (RFC-004e2)
-
-**Source accepted after independent review; the disposable CLI proof now passes six checks.** See [004e3 evidence](../../tasks/004e3-verify-existing-account-admin-command.md). RFC-004/004e remain incomplete. Production execution, credential provisioning and public routes require their separate gates.
+# Existing-account installation admin command
 
 ## Authority and prerequisites
 
 This is a local trusted installation-operator tool, not an authenticated HTTP API. Authority comes from protected OS execution and DB access. Neither an input field, the action name nor an acknowledgement string authenticates an operator. Do not expose it to application users or a public route/job runner, and do not grant them operator environment or filesystem access.
 
-Before a future approved execution:
+Before you run it:
 
-1. Independently approve the actual destination and intended operation. A loopback address may be an SSH tunnel to another server; URL validation and database/user readback do **not** prove a disposable or nonproduction target. No production execution is approved in this slice.
-2. Apply the separately approved identity schema beforehand. This client never migrates, creates, resets, truncates or discovers schema. Use the minimum approved operator DB privileges for the existing lifecycle transactions.
+1. Confirm the actual destination and intended operation. A loopback address may be an SSH tunnel to another server; URL validation and database/user readback do **not** prove a disposable or nonproduction target.
+2. Apply the identity schema beforehand. This client never migrates, creates, resets, truncates or discovers schema. Use the minimum approved operator DB privileges for the existing lifecycle transactions.
 3. Through an approved trusted inspection procedure, identify the exact already-provisioned account IDs, current singleton/admin state and (for replacement) expected old admin. Never choose the first signup or guess an ID. This command does not create a user, credential or password.
 4. Protect environment and stdin from other users, shell tracing/history, logs and source control. Supply URL credentials through the approved private process environment, not command-line flags. Do not place real IDs or secrets in checked-in examples. Ensure the input producer closes its pipe; interactive TTY input is rejected.
 
@@ -23,14 +21,14 @@ bun --no-env-file apps/server/src/modules/identity/admin-operator-cli.ts bootstr
 bun --no-env-file apps/server/src/modules/identity/admin-operator-cli.ts replace < protected-replacement.json
 ```
 
-The latter two lines are **future approved execution syntax, not commands run as evidence here**. The named protected files are placeholders for privately supplied input, not repository artifacts. `--help` is static/offline. No flags or additional arguments are accepted for either action; IDs, credentials, authority claims and reasons are never argv options.
+The named protected files in the last two lines are placeholders for privately supplied input, not repository artifacts. `--help` is static/offline. No flags or additional arguments are accepted for either action; IDs, credentials, authority claims and reasons are never argv options.
 
 Both environment values are mandatory:
 
-- `ZETTA_OPERATOR_DATABASE_URL`: an explicit `postgres://` or `postgresql://` URL with one nonempty username, password and database path. No `DATABASE_URL` fallback, app environment loading or automatic dotenv occurs. App `DATABASE_URL` is intentionally irrelevant, not a protection against targeting the same installation. Actually selecting an application DB needs future explicit target approval.
-- `ZETTA_OPERATOR_ALLOW_MUTATION`: exactly `identity-admin`. This acknowledgement is not authentication or target approval.
+- `ZETTA_OPERATOR_DATABASE_URL`: an explicit `postgres://` or `postgresql://` URL with one nonempty username, password and database path. No `DATABASE_URL` fallback, app environment loading or automatic dotenv occurs. App `DATABASE_URL` is intentionally irrelevant, not a protection against targeting the same installation. Check which installation the URL points at before you run it.
+- `ZETTA_OPERATOR_ALLOW_MUTATION`: exactly `identity-admin`. This acknowledgement is not authentication.
 
-The first command only permits lowercase `localhost`, canonical dotted decimal `127.0.0.0/8` loopback or `[::1]`, with an optional canonical decimal port 1–65535. Omitted port becomes the explicit effective port 5432. The driver receives unbracketed `::1`. Other hosts, sockets, host lists, shorthand/normalized IP spellings, leading-zero ports, query/fragment, multiple/empty database paths, dot paths, whitespace/control tricks, noncanonical/double percent escapes and encoded path separators are rejected. Components use canonical `encodeURIComponent` encoding where needed; decoded components cannot contain controls, percent signs or path separators. There is no remote TLS policy in this slice: driver SSL is explicitly disabled for the approved local/trusted-tunnel transport.
+The first command only permits lowercase `localhost`, canonical dotted decimal `127.0.0.0/8` loopback or `[::1]`, with an optional canonical decimal port 1–65535. Omitted port becomes the explicit effective port 5432. The driver receives unbracketed `::1`. Other hosts, sockets, host lists, shorthand/normalized IP spellings, leading-zero ports, query/fragment, multiple/empty database paths, dot paths, whitespace/control tricks, noncanonical/double percent escapes and encoded path separators are rejected. Components use canonical `encodeURIComponent` encoding where needed; decoded components cannot contain controls, percent signs or path separators. The command accepts no remote host: driver SSL is explicitly disabled for the approved local/trusted-tunnel transport.
 
 **Any present environment key matching `/^PG/i`, even with an empty value, or `NODE_PG_FORCE_NATIVE` denies execution.** This includes service/password files, SSL, connection options and ambient target defaults. Use a deliberately prepared environment; the command never silently removes or substitutes these settings.
 
@@ -43,13 +41,17 @@ Exactly one JSON object, maximum **4096 UTF-8 bytes including whitespace**, clos
 Bootstrap, synthetic example only:
 
 ```json
-{"userId":"synthetic-existing-account"}
+{ "userId": "synthetic-existing-account" }
 ```
 
 Replacement, synthetic example only:
 
 ```json
-{"expectedAdminUserId":"synthetic-old-admin","newAdminUserId":"synthetic-existing-account","reason":"planned-transfer"}
+{
+  "expectedAdminUserId": "synthetic-old-admin",
+  "newAdminUserId": "synthetic-existing-account",
+  "reason": "planned-transfer"
+}
 ```
 
 Only those exact keys are accepted. IDs are exact, nonempty, already trimmed strings without C0/C1/DEL controls; old/new IDs must differ. Do not silently normalize IDs. Replacement reason is exactly `admin-unavailable` or `planned-transfer`; no freeform explanation, private information, credential, token or password is accepted. The CLI narrows the accepted lifecycle service's general nonblank-reason contract without changing that service.
@@ -73,17 +75,9 @@ Bounds: **20 seconds hard process deadline**, including stdin, imports, connecti
 
 A failure is **not** a guarantee of rollback. A lost commit response, unhealthy connection, successful commit followed by close failure, or hard deadline can leave a committed mutation despite exit 1 and no success label. Stop. Through a separately approved trusted inspection procedure, inspect singleton pointer, selected accounts/memberships, audit and session state before deciding what to do next. Do not rerun bootstrap/replacement automatically, invent a rollback claim, or change the expected-old ID to bypass reconciliation. The stale expected-old check is deliberate. Do not print sensitive inspection results into ordinary logs.
 
-## Evidence and remaining gates
+## New-credential operator command
 
-See [RFC-004e2](../../tasks/004e2-run-existing-account-admin-command.md) for exact offline commands. Tests use injected service/open/IO boundaries, bounded stream fixtures, pure driver options, source inspection and fresh fail-closed subprocesses. They prove source behavior, not an actual CLI SQL transaction, trusted operator authenticity, effective operator credentials, physical rollback, locks/concurrency, invitation serialization or live session revocation.
-
-The user's checkpoint continuation ran `bash scripts/verify-identity-auth.sh operator` on a fresh verified dedicated instance. All six checks and scoped teardown passed with exit 0. No argument still selects the separate auth proof, which was not rerun. New CLI evidence covers denials, selected-account bootstrap, stale/repeated denial, audit-failure rollback, membership/session-row scope and a two-process bootstrap race. This new proof has coordinator source review; it has not received a new independent review.
-
-Synthetic user/session rows are not credential or login evidence. Effective cookie/cache revocation, invitation coordination and connected access gates remain. Credential provisioning is a separate unimplemented gate: installed Better Auth's admin-plugin `createUser` is not available in the current factory's empty plugin configuration and would need separately reviewed plugin/schema/auth composition. Do not add a plugin, guessed password hash or credential INSERT to make this command provision accounts. Parent RFC-004/004e stay incomplete.
-
-## New-credential operator command (RFC-004e6)
-
-The separate `credential-operator-cli.ts` composes supported private credential provisioning with the existing admin lifecycle. Source/offline checks and the six-case disposable valid-target proof passed, including an independent coordinator repetition. See [004e7](../../tasks/004e7-verify-credential-admin-command.md) for evidence and limits. The selected-existing-account command above remains available unchanged.
+The separate `credential-operator-cli.ts` composes supported private credential provisioning with the existing admin lifecycle. The selected-existing-account command above remains available unchanged.
 
 ```text
 bun --no-env-file apps/server/src/modules/identity/credential-operator-cli.ts --help

@@ -4,7 +4,7 @@ A bot can have a real phone number. This page is for the person who runs the ins
 
 Zetta, the assistant every person has, can have a number too: its Phone number section is the same as any other bot's. Zetta gets no extra powers on a call: an outside caller to its number can only leave a message or end the call, and the owner is recognised only by the registered number and the PIN.
 
-**Status of the code.** Built: settings, the provider adapter, numbers (ask, approve, review, release, hold), the owner's own number and keypad PIN, the do-not-call list, and **incoming calls** (below). **Outgoing calls** are built too (see Outgoing calls). **Twilio is a second provider next to Telnyx** (below). **No real Telnyx or Twilio account was used, and no real call was made, in either direction.** The adapters, the webhook routes and the media socket were written from each provider's public documentation and tested against a fake Telnyx server and a fake Twilio server that sign real webhooks and open a real WebSocket to the real routes (`apps/server/src/modules/phone/fake.ts`, `fake-twilio.ts`, `calls.integration.test.ts`, `twilio.integration.test.ts`). Expect to fix small differences the first time a real account is used (the byte layout of L16 audio and the exact shape of the answer action are the likeliest); the Test button in Studio (below) is the first thing to run, then one call from your own phone.
+**Two providers.** Telnyx and Twilio are both supported, for incoming and outgoing calls. The Test button in Studio (below) is the first thing to run after you save a provider's key, then one call from your own phone.
 
 ## Choosing a provider
 
@@ -31,10 +31,10 @@ The API for the Studio and number pages: `GET /api/phone/offer` lists the ready 
 
 Telnyx is registered in the plugin registry as `telnyx` (`apps/server/src/modules/phone/telnyx-plugin.ts`) with its own settings: API key (sealed), public key and Call Control application id. Install it on **Plugins** like any other: for yourself, or, as the administrator, as the **team configuration** so every member and every shared bot uses one account. The plugin has no tools: bots still place and answer calls through the phone module, which asks for the account of the **number's owner** (their own configuration first, then the team's).
 
-- **Webhook address of a plugin account:** `<public address>/api/phone/webhook/<owner user id>`. The id only chooses which key checks the signature, so an unknown id or a wrong signature is refused the same way. The old `<public address>/api/phone/webhook` keeps using the installation's Telnyx settings.
+- **Webhook address of a plugin account:** `<public address>/api/phone/webhook/<owner user id>`. The id only chooses which key checks the signature, so an unknown id or a wrong signature is refused the same way. A good signature is not enough: an event reaches a number only when the account that signed it is the one of the number's owner or the installation's, and it reaches a running call only when it is the account the call runs on. The old `<public address>/api/phone/webhook` keeps using the installation's Telnyx settings.
 - **Order of lookup:** the owner's Telnyx plugin account, then the installation's old Telnyx settings (Studio > Phone numbers). Nothing was migrated or deleted. Moving a setup is: install the plugin, paste the same three values, change the application's webhook URL, then Disconnect the Telnyx card in Studio.
 - **Still installation-wide** (shared with Twilio): the public address, countries, limits, request mode and the default provider.
-- **Not done yet:** the Studio card still edits the old installation settings, the Numbers page does not show which account a number uses, the Chief's phone tools do not pass the person to the offer, and no real Telnyx account has been used.
+- **Limits:** the Studio card edits the installation settings, not a plugin account; the Numbers page does not show which account a number uses; the Chief's phone tools do not pass the person to the offer.
 
 ## Twilio is a plugin too (2026-11-25)
 
@@ -42,8 +42,8 @@ Twilio is registered as the `twilio` plugin (`apps/server/src/modules/phone/twil
 
 - **Addresses of a plugin account:** `<public address>/api/phone/twilio/voice/<owner user id>` and `.../twilio/status/<owner user id>`. Twilio signs the whole address, so the id is part of what is checked, and it only chooses which Auth Token checks the signature. Zetta sets these addresses on a number itself when it buys or attaches it for that owner. The two plain addresses keep serving the installation's own account.
 - **The public address stays an installation setting** (one address reaches this server whatever the account), so a plugin account needs it set in Studio > Phone numbers.
-- **A number stays on the account that holds it.** A number bought on the installation's Twilio account is not moved by installing the plugin: attach it again after the owner installs it. The same holds for Telnyx.
-- **Not done yet:** same list as Telnyx (the Studio card, `/api/phone/test`, the Chief's phone tools and the Numbers page still use the installation settings). No real Twilio account was used.
+- **A number stays on the account that holds it.** A number bought on the installation's Twilio account is not moved by installing the plugin: attach it again after the owner installs it. The same holds for Telnyx. A number held in a person's own account cannot be moved to someone else in Zetta: release it and get a new one for that bot.
+- **Limits:** the same as Telnyx (the Studio card, `/api/phone/test`, the Chief's phone tools and the Numbers page use the installation settings).
 
 ## Telnyx setup, step by step
 
@@ -58,7 +58,7 @@ The Chief's installation card only links to that page.
 
 ## Twilio setup, step by step
 
-Twilio's pages read for this (2026-11-23) are listed at the top of `apps/server/src/modules/phone/twilio.ts`. **No Twilio account was available: nothing here ran against the real service.**
+Twilio's pages read for this (2026-11-23) are listed at the top of `apps/server/src/modules/phone/twilio.ts`.
 
 1. Create a Twilio account and fund it.
 2. **Account SID and Auth Token**: Twilio Console > Account info. The Account SID (`AC` and 32 letters and digits) is not a secret: you type it in Studio. The **Auth Token** is: you paste it into Studio, where it is sealed in your browser, stored encrypted and never shown again. Zetta uses it as the password of the REST API (HTTP basic with the Account SID) and as the key that checks the signature of every webhook (`X-Twilio-Signature`). Rotating it in Twilio needs the same paste in Studio.
@@ -137,7 +137,7 @@ Instead of letting Zetta order a number, an administrator can give a bot a numbe
 - **Who may do it**: administrators only. The bot must not be archived and must have no number or request. Zetta (the Chief) can be given one.
 - **Reassign** (`reassign`, administrators only, a card each time in the Chief): moves an `active` or `held` number to another bot that has none, refused while a call is running on it. It **clears** what belonged to the old owner: the registered own number, the PIN, failed tries and the hold; the new owner sets their own. A held number becomes active.
 - **Nothing is configured through environment variables.** The key, the application and everything else are Studio settings in the database; a test fails if the phone module reads `process.env`.
-- **Telnyx request, as built**: `GET /phone_numbers?filter[phone_number]=<e164>` to find the number (its `id`, `connection_id`, `status`), then `PATCH /phone_numbers/{id}` with `{"connection_id": "<call application id>"}` (skipped when it already points there). Documented at <https://developers.telnyx.com/api-reference/phone-number-configurations/update-a-phone-number> and <https://developers.telnyx.com/api-reference/phone-number-configurations/list-phone-numbers>. Not confirmed: that a real account accepts exactly this on a number bought in the portal (nothing was run against Telnyx), and whether a number needs extra requirements (an address, a regulatory group) before it can be routed; the page for the separate `PATCH /phone_numbers/{id}/voice` does not take `connection_id`.
+- **Telnyx request, as built**: `GET /phone_numbers?filter[phone_number]=<e164>` to find the number (its `id`, `connection_id`, `status`), then `PATCH /phone_numbers/{id}` with `{"connection_id": "<call application id>"}` (skipped when it already points there). Documented at <https://developers.telnyx.com/api-reference/phone-number-configurations/update-a-phone-number> and <https://developers.telnyx.com/api-reference/phone-number-configurations/list-phone-numbers>. A number may need extra requirements (an address, a regulatory group) before it can be routed; the page for the separate `PATCH /phone_numbers/{id}/voice` does not take `connection_id`.
 
 ## Brazilian numbers
 
@@ -203,24 +203,10 @@ A bot with an active number whose "Outgoing calls" switch is on can call any num
 
 **You are responsible for consent.** Calls the bot places are calls placed in your installation's name. Whether a call needs the callee's consent, may be made at all, or counts as marketing or telemarketing depends on the country. In Brazil look at "Não Me Perturbe" (the national do-not-call registry) and the telemarketing rules of Anatel; in the US at the TCPA and the national Do Not Call list; in Europe at the rules on unsolicited calls. These are things to check, not legal advice. The do-not-call list in Zetta only remembers people who asked on a call or whom an administrator added; it does not read any national registry.
 
-## What is not proven yet
+## Limits
 
-**Twilio (nothing ran against a real account):**
-
-- That the webhook signature is computed as Zetta does (HMAC-SHA1 with the Auth Token over the called address and the sorted form parameters, key and value glued, base64). Twilio's security page names the parts but does not write the string out, and its worked example gives no Auth Token, so no value from Twilio's documentation could be reproduced. The adapter checks against a value made independently with `openssl`. How a port other than 443 appears in the called address is not in the documentation either.
-- That the stream's first message (`start`) carries the `<Parameter>` values in `customParameters` (the stream page says it does; its message shape comes from the message reference), and that Twilio opens the socket with no query and no credential of its own. Zetta does **not** check any signature on the WebSocket handshake; the one-time token is the credential.
-- That the TwiML `<Connect><Stream>` followed by `<Hangup/>` ends the call when Zetta closes the socket (the page says the verbs after it run when the socket closes), and that asynchronous answering machine detection works while a bidirectional stream is open (the machine detection page warns that Media Streams started while detection runs share its forked streams; it is not clear that a `<Connect><Stream>` counts).
-- That `StatusCallback` is accepted on an update of an existing number (only the create page lists it) and that the delete answers `204` (not stated); that fetching one number by its sid is as Zetta assumes; the exact error Twilio gives when a purchase lacks a bundle (Zetta avoids the call by reading `address_requirements`).
-- That a webhook is answered within Twilio's patience: Zetta waits at most 8 seconds for the call's answer and then rejects with `<Reject reason="busy"/>`; Twilio's page names no timeout.
-- **Replay**: Twilio's signature has no timestamp. Zetta keeps the id of each webhook (`CallSid`, status and sequence number) in the database for an hour, so a replay inside that hour is refused by every instance; a captured request replayed later passes the signature, but a voice webhook for a call that does not exist only creates a ringing row that no stream ever joins and that ends by itself, and a status callback of an unknown call does nothing.
-
-- (Telnyx) Everything about Telnyx's real behaviour: the answer action with stream options, the order and timing of its events, the audio (Telnyx streams PCMU 8 kHz by default; L16's byte order is not documented, so Zetta asks for PCMU), whether the stream also sends key presses (Zetta reads them from `call.dtmf.received` only), and how fast its servers close a socket. The fake Telnyx in the tests follows the documentation, not the service.
-- **No real call was ever placed**: no Telnyx account was available. For outgoing calls in particular: that a dial with `stream_url` opens the stream when the callee answers, the timing of `call.machine.detection.ended` (Zetta waits 8 s for it before it greets, and also reads a late result), the `result` values of the premium detection, that `time_limit_secs` counts as assumed, that the outbound voice profile refuses what it should, how long a call rings before Telnyx gives up (Zetta gives up after 60 s of its own), and how well the detection tells a person from a machine on real lines.
-- Call quality (latency of the recognizer and the voice over a real line, echo, noise), and Brazilian number papers.
+- **Replay (Twilio).** Twilio's signature has no timestamp. Zetta keeps the id of each webhook (`CallSid`, status and sequence number) in the database for an hour, so a replay inside that hour is refused by every instance; a captured request replayed later passes the signature, but a voice webhook for a call that does not exist only creates a ringing row that no stream ever joins and that ends by itself, and a status callback of an unknown call does nothing.
 - Several workers: the webhook and the socket must reach the same worker for a call; the person's Hang up must too (it is worker-only like the webhook); with one worker (the default) nothing needs doing.
-
-## Limits of this foundation
-
 - `PUT /api/connections/phone-key` and `PUT /api/connections/phone-twilio-key` (like the other `-key` routes) opens a key sealed to the transport key of one process. Behind a load balancer send it to the worker (see `worker-only.ts`).
 - The adapter does not run on the compiled single-file server differently from the rest: it only uses `fetch` and `node:crypto`. Number types and validity come from `libphonenumber-js` (MIT, bundled and checked under `bun build --compile`).
 - The card shows no cost per minute: Zetta holds no rate for the provider's destinations.

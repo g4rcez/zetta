@@ -1,8 +1,6 @@
 # Fixture dispatch storage
 
-Status: storage design accepted by coordinator after independent CLEAR review,2026-10-22. No schema, migration, trigger, dispatcher or database proof is implemented by this document. Parent010 remains incomplete. Review: [010c1](../reviews/dispatch-storage-010c1-review.md); reviewed content hash is recorded there, with only this acceptance status added afterward.
-
-Parents: accepted [durable dispatch](durable-dispatch.md), [010b1 pure contract](../../tasks/010b1-define-dispatch-action-contract.md) and existing [durable runs](durable-runs.md). Next gate: [010c1 task](../../tasks/010c1-design-dispatch-storage.md).
+Parents: [durable dispatch](durable-dispatch.md) and [durable runs](durable-runs.md).
 
 ## Decision and inspected integration points
 
@@ -10,15 +8,15 @@ Add exactly three tables: dispatch_capacity, dispatch_claims and dispatch_grants
 
 Direct source inspection found:
 
-| Existing export/path | Actual relevant storage contract |
-| --- | --- |
-| runs in packages/db/src/schema/runs.ts | UUID id; owner_user_id references membership.user_id; unique(id,owner_user_id); current_generation, run revision, canonical private input_snapshot, status and terminal/cancel timestamps. |
-| runAttempts in the same file | UUID id; unique(id,run_id,owner_user_id); unique(run_id,generation); immutable generation/lease identity, nullable lease_expires_at and claimed_at; status/effect/stop/terminal facts; cancellation_reason permits owner_requested only. |
-| connection in packages/db/src/schema/connections.ts | UUID id, text owner_user_id references auth user; unique(id,owner_user_id,kind), kind=api-key. |
-| connectionCredential in the same file | PK(connection_id,credential_version); owner/kind FK to connection(id,owner_user_id,kind). No unique(connection_id,credential_version,owner_user_id) exists. |
-| packages/db/src/schema/index.ts and packages/db/src/relations.ts | Barrel exports auth/identity/connections/runs; defineRelations consumes the barrel. Add only the new dispatch export; no existing relation rewrite is needed. |
-| apps/server/src/modules/runtime/runs.ts | Owned store locks membership then run then current attempt. applyRunTransition is a trusted transaction primitive, not authority; run revision is the existing run/attempt lifecycle CAS. |
-| packages/db/run-test-migrations/20261022180711_runs_constraints/migration.sql | Existing immutable run/attempt identity and lease guards; attempt update/delete locks its run; deferred current-generation existence checks lock run then attempt. These must remain in the integrated lock audit. |
+| Existing export/path                                                          | Actual relevant storage contract                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| runs in packages/db/src/schema/runs.ts                                        | UUID id; owner_user_id references membership.user_id; unique(id,owner_user_id); current_generation, run revision, canonical private input_snapshot, status and terminal/cancel timestamps.                                               |
+| runAttempts in the same file                                                  | UUID id; unique(id,run_id,owner_user_id); unique(run_id,generation); immutable generation/lease identity, nullable lease_expires_at and claimed_at; status/effect/stop/terminal facts; cancellation_reason permits owner_requested only. |
+| connection in packages/db/src/schema/connections.ts                           | UUID id, text owner_user_id references auth user; unique(id,owner_user_id,kind), kind=api-key.                                                                                                                                           |
+| connectionCredential in the same file                                         | PK(connection_id,credential_version); owner/kind FK to connection(id,owner_user_id,kind). No unique(connection_id,credential_version,owner_user_id) exists.                                                                              |
+| packages/db/src/schema/index.ts and packages/db/src/relations.ts              | Barrel exports auth/identity/connections/runs; defineRelations consumes the barrel. Add only the new dispatch export; no existing relation rewrite is needed.                                                                            |
+| apps/server/src/modules/runtime/runs.ts                                       | Owned store locks membership then run then current attempt. applyRunTransition is a trusted transaction primitive, not authority; run revision is the existing run/attempt lifecycle CAS.                                                |
+| packages/db/run-test-migrations/20261022180711_runs_constraints/migration.sql | Existing immutable run/attempt identity and lease guards; attempt update/delete locks its run; deferred current-generation existence checks lock run then attempt. These must remain in the integrated lock audit.                       |
 
 The DB package exposes schema subpaths through its wildcard exports. Do not invent a run-store.ts or an owner-triple credential key. Schema code must import actual runs/runAttempts exports and preserve current run/connection migrations.
 
@@ -32,38 +30,38 @@ All FKs below use ON UPDATE RESTRICT, ON DELETE RESTRICT. No cascades, deferrabl
 
 ## dispatch_capacity
 
-| Column | Type / invariant |
-| --- | --- |
-| id | integer PK, CHECK id=1 |
-| launcher_installation_id | bounded text; one selected installation for this initial deployment |
-| policy_version | bounded text, exact trusted operator fixture policy |
-| global_limit / actor_limit | integer, CHECK global_limit=2 AND actor_limit=1 |
-| created_at | finite timestamptz(3), immutable installation bootstrap time |
+| Column                     | Type / invariant                                                    |
+| -------------------------- | ------------------------------------------------------------------- |
+| id                         | integer PK, CHECK id=1                                              |
+| launcher_installation_id   | bounded text; one selected installation for this initial deployment |
+| policy_version             | bounded text, exact trusted operator fixture policy                 |
+| global_limit / actor_limit | integer, CHECK global_limit=2 AND actor_limit=1                     |
+| created_at                 | finite timestamptz(3), immutable installation bootstrap time        |
 
 Add UNIQUE(launcher_installation_id,policy_version), referenced by claims. The singleton is a mutex/policy row, never a counter. An explicit operator bootstrap transaction inserts the exact reviewed installation/policy after migrations; schema generation does not insert environment-specific values. Repeated bootstrap reads and compares exact existing values, never upserts/reconfigures. Missing/mismatched policy denies claims. BEFORE UPDATE/DELETE and BEFORE TRUNCATE guards reject modification; policy change requires a future reviewed maintenance migration with dispatch disabled and unresolved claims reconciled. Fixture proof bootstrap uses synthetic values on its dedicated disposable target.
 
 ## dispatch_claims
 
-| Column | Type / invariant |
-| --- | --- |
-| attempt_id | UUID PK; one reservation per attempt forever |
-| run_id / owner_user_id | UUID / bounded text; composite identity FK below |
-| generation / lease_id | positive int32 / UUID, immutable copies of the already-assigned attempt identity |
-| claim_operation_id | UUID UNIQUE, generated before reservation transaction for acknowledgement-loss lookup |
-| launcher_installation_id / policy_version | bounded text, immutable; composite FK to dispatch_capacity |
-| launch_spec_version | integer CHECK=1 |
-| launch_spec_canonical | text, octet_length1..16384, IS JSON ARRAY; complete secret-free spec tuple below |
-| launch_spec_digest / launch_identity_digest | lowercase SHA256 text, immutable consistency aids |
-| image_digest | exact trusted sha256 image identity, immutable; no caller-selected image |
-| deadline_at | immutable finite timestamptz(3), created_at < deadline_at <= created_at+60seconds |
-| receipt_id | nullable UUID; binds NULL→one receipt once, never clears/replaces |
-| prepare_intent_at | nullable finite timestamp; binds once before first prepare submission |
-| resource_state | text: not_submitted, prepare_pending, prepared, active, stopping, unknown, cleaned |
-| pending_operation_id / pending_operation_kind | paired nullable UUID / enum prepare,activate,input,stop,remove; one unresolved resource operation at a time |
-| cleanup_kind / cleanup_confirmed_at | paired nullable enum not_submitted,removed / finite timestamp; authoritative fact recorded once |
-| cancel_reason / cancel_requested_at | paired nullable closed reason owner,deadline,revocation,shutdown,recovery / finite timestamp; first intent is sticky |
-| released_at | nullable finite timestamp, set once; never clears or changes |
-| revision / created_at / updated_at | positive int32 / finite timestamps; insertion revision1 and updated_at=created_at; immutable created_at, monotonic updated_at |
+| Column                                        | Type / invariant                                                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| attempt_id                                    | UUID PK; one reservation per attempt forever                                                                                  |
+| run_id / owner_user_id                        | UUID / bounded text; composite identity FK below                                                                              |
+| generation / lease_id                         | positive int32 / UUID, immutable copies of the already-assigned attempt identity                                              |
+| claim_operation_id                            | UUID UNIQUE, generated before reservation transaction for acknowledgement-loss lookup                                         |
+| launcher_installation_id / policy_version     | bounded text, immutable; composite FK to dispatch_capacity                                                                    |
+| launch_spec_version                           | integer CHECK=1                                                                                                               |
+| launch_spec_canonical                         | text, octet_length1..16384, IS JSON ARRAY; complete secret-free spec tuple below                                              |
+| launch_spec_digest / launch_identity_digest   | lowercase SHA256 text, immutable consistency aids                                                                             |
+| image_digest                                  | exact trusted sha256 image identity, immutable; no caller-selected image                                                      |
+| deadline_at                                   | immutable finite timestamptz(3), created_at < deadline_at <= created_at+60seconds                                             |
+| receipt_id                                    | nullable UUID; binds NULL→one receipt once, never clears/replaces                                                             |
+| prepare_intent_at                             | nullable finite timestamp; binds once before first prepare submission                                                         |
+| resource_state                                | text: not_submitted, prepare_pending, prepared, active, stopping, unknown, cleaned                                            |
+| pending_operation_id / pending_operation_kind | paired nullable UUID / enum prepare,activate,input,stop,remove; one unresolved resource operation at a time                   |
+| cleanup_kind / cleanup_confirmed_at           | paired nullable enum not_submitted,removed / finite timestamp; authoritative fact recorded once                               |
+| cancel_reason / cancel_requested_at           | paired nullable closed reason owner,deadline,revocation,shutdown,recovery / finite timestamp; first intent is sticky          |
+| released_at                                   | nullable finite timestamp, set once; never clears or changes                                                                  |
+| revision / created_at / updated_at            | positive int32 / finite timestamps; insertion revision1 and updated_at=created_at; immutable created_at, monotonic updated_at |
 
 FK(attempt_id,run_id,owner_user_id) targets the existing run_attempts unique triple. Add UNIQUE(attempt_id,run_id,owner_user_id) on claims for the grants FK, and UNIQUE(launcher_installation_id,receipt_id); ordinary NULL-distinct semantics permit multiple unknown receipts. Add indexes on (launcher_installation_id,owner_user_id) WHERE released_at IS NULL and (launcher_installation_id,attempt_id) WHERE released_at IS NULL. Claim-operation unique lookup is the repair key; it is not an instruction to prepare.
 
@@ -81,18 +79,18 @@ Minimal added cleanup state resolves the010a omission: two pending-operation col
 
 ## dispatch_grants
 
-| Column | Type / invariant |
-| --- | --- |
-| id | UUID PK, generated before transaction |
-| attempt_id / run_id / owner_user_id | UUID / UUID / bounded text, immutable composite FK to claims |
-| action_id / kind / sequence | UUID / activate or input / positive int32; activate sequence=1; input1..65537 |
-| canonical_action / action_digest | text octet_length1..16384 IS JSON ARRAY /64 lowercase hex; immutable accepted010b1 encoding and digest |
-| connection_id / credential_version | nullable UUID / integer; fixture CHECK requires both NULL |
-| expires_at | immutable finite timestamp, created_at < expires_at <= created_at+30seconds; service also requires <= claim.deadline_at |
-| state | pending,issued,cancelled,expired,uncertain |
-| delivery_outcome | not_attempted,acknowledged,unknown |
-| issued_at / cancelled_at | nullable finite timestamps; no invented issue timestamp for unknown commit |
-| revision / created_at / updated_at | positive int32 / finite timestamps; initial1 and equality, immutable created_at, monotonic updated_at |
+| Column                              | Type / invariant                                                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| id                                  | UUID PK, generated before transaction                                                                                   |
+| attempt_id / run_id / owner_user_id | UUID / UUID / bounded text, immutable composite FK to claims                                                            |
+| action_id / kind / sequence         | UUID / activate or input / positive int32; activate sequence=1; input1..65537                                           |
+| canonical_action / action_digest    | text octet_length1..16384 IS JSON ARRAY /64 lowercase hex; immutable accepted010b1 encoding and digest                  |
+| connection_id / credential_version  | nullable UUID / integer; fixture CHECK requires both NULL                                                               |
+| expires_at                          | immutable finite timestamp, created_at < expires_at <= created_at+30seconds; service also requires <= claim.deadline_at |
+| state                               | pending,issued,cancelled,expired,uncertain                                                                              |
+| delivery_outcome                    | not_attempted,acknowledged,unknown                                                                                      |
+| issued_at / cancelled_at            | nullable finite timestamps; no invented issue timestamp for unknown commit                                              |
+| revision / created_at / updated_at  | positive int32 / finite timestamps; initial1 and equality, immutable created_at, monotonic updated_at                   |
 
 Add UNIQUE(attempt_id,action_id) and UNIQUE(attempt_id,kind,sequence). These retain spent action/sequence tombstones. Index (attempt_id,id) for sorted grant locking. Canonical action carries generation, lease, installation, policy and receipt; do not add redundant grant copies of those columns. The service compares every one with the locked claim/attempt, including the receipt that must already be bound. FK ownership alone cannot detect a substituted canonical payload.
 
@@ -129,16 +127,16 @@ No database SHA extension is required. Service recomputes SHA256 over canonical 
 
 Use generated Drizzle DDL for tables/FKs/checks/indexes, followed by an explicitly authorized custom feature migration for these OLD/NEW guards:
 
-| Guard | Required behavior |
-| --- | --- |
-| dispatch_capacity_frozen | Reject UPDATE/DELETE/TRUNCATE after explicit bootstrap. |
-| dispatch_claims_identity_immutable | Reject changes to attempt/run/owner/generation/lease/claim-operation/installation/policy/spec version+canonical+digests/image/deadline/created_at. |
-| dispatch_claims_initial | INSERT permits only revision1, updated_at=created_at, resource_state=not_submitted and all receipt/prepare/pending/cleanup/cancellation/release fields NULL. Recovery never inserts a pre-spent or already-cleaned claim. |
-| dispatch_claims_forward_only | Receipt, prepare intent, cancellation pair, cleanup pair and release bind once; no clearing/replacement. Once prepare exists state cannot return to not_submitted. Cleaned cannot regress. Released row permits only exact no-op. No new pending operation after cleanup/release. |
-| dispatch_grants_identity_immutable | Reject changes to id,claim ownership tuple,action ID/kind/sequence,canonical/digest,credential pair,expires_at,created_at. |
-| dispatch_grants_forward_only | Enforce the state/delivery/time transitions above; no reset/reissue or terminal mutation. |
-| dispatch_revision_monotonic | For a changed claim/grant row: OLD.revision<2147483647, NEW.revision=OLD.revision+1, NEW.updated_at>=OLD.updated_at. Exact no-op retains both; insertion1/equal times. Do not independently increment run revision here. |
-| dispatch_tombstones_retained | Reject DELETE and TRUNCATE for both claim/grant tables, including released/expired rows. Future retention needs reviewed maintenance; no cascade or ordinary service deletion. |
+| Guard                              | Required behavior                                                                                                                                                                                                                                                                 |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| dispatch_capacity_frozen           | Reject UPDATE/DELETE/TRUNCATE after explicit bootstrap.                                                                                                                                                                                                                           |
+| dispatch_claims_identity_immutable | Reject changes to attempt/run/owner/generation/lease/claim-operation/installation/policy/spec version+canonical+digests/image/deadline/created_at.                                                                                                                                |
+| dispatch_claims_initial            | INSERT permits only revision1, updated_at=created_at, resource_state=not_submitted and all receipt/prepare/pending/cleanup/cancellation/release fields NULL. Recovery never inserts a pre-spent or already-cleaned claim.                                                         |
+| dispatch_claims_forward_only       | Receipt, prepare intent, cancellation pair, cleanup pair and release bind once; no clearing/replacement. Once prepare exists state cannot return to not_submitted. Cleaned cannot regress. Released row permits only exact no-op. No new pending operation after cleanup/release. |
+| dispatch_grants_identity_immutable | Reject changes to id,claim ownership tuple,action ID/kind/sequence,canonical/digest,credential pair,expires_at,created_at.                                                                                                                                                        |
+| dispatch_grants_forward_only       | Enforce the state/delivery/time transitions above; no reset/reissue or terminal mutation.                                                                                                                                                                                         |
+| dispatch_revision_monotonic        | For a changed claim/grant row: OLD.revision<2147483647, NEW.revision=OLD.revision+1, NEW.updated_at>=OLD.updated_at. Exact no-op retains both; insertion1/equal times. Do not independently increment run revision here.                                                          |
+| dispatch_tombstones_retained       | Reject DELETE and TRUNCATE for both claim/grant tables, including released/expired rows. Future retention needs reviewed maintenance; no cascade or ordinary service deletion.                                                                                                    |
 
 Use fixed SQLSTATE23514 and stable constraint names for guard rejections. Restrict these triggers to row-local OLD/NEW checks; they must not take capacity/membership/run locks after a claim/grant lock or create a hidden reverse edge. PostgreSQL supports row UPDATE/DELETE and statement TRUNCATE triggers; actual generated/custom behavior must be exercised. [PostgreSQL trigger behavior](https://www.postgresql.org/docs/18/trigger-definition.html)
 
@@ -167,17 +165,17 @@ The installed drizzle-kit1.0.0-rc.4 currently uses per-migration migration.sql/s
 
 Actual PostgreSQL proof is a separate source/freeze/authorization step after schema review. Extend the guarded disposable proof lineage with a new dispatch proof adapter that first verifies accepted identity/connection/run migration hashes and then dispatch hashes. Keep legacy allowlists/helpers frozen; do not point the proof at an app DB or relax target guards. Follow the existing bounded client/SQLSTATE/pg_blocking_pids pattern. Reject an unrecognized server/version or unsupported IS JSON syntax; pin actual server/image in the proof receipt. Apply only on the explicitly authorized disposable target, never during this design or offline generation.
 
-| Future proof ID | Exact observable and boundary |
-| --- | --- |
-| S1 schema positive | Explicit synthetic singleton, valid owned run/attempt lease, claim and pending activate/input grants commit. Read exact columns/canonical bytes/revisions back from fresh clients. |
-| S2 identity/FKs | Missing attempt, foreign run/owner, wrong policy FK, duplicate attempt/action/sequence/claim operation or installation receipt fail the named23503/23505 constraint. Multiple NULL receipts are allowed. No owner-triple credential FK appears. |
-| S3 closed rows | Nonnull fixture credentials, unsupported kind/version, oversize/malformed JSON, invalid digest, counters/time infinity/chronology, incomplete pending/cleanup pairs and release with missing cleanup/pending absence fail named23514 checks. |
-| S4 immutable/tombstones | Attempt/lease/spec/identity/action/expiry changes, receipt replacement, release resurrection, revision rollback/jump/exhaustion, issued→pending, acknowledged→unknown, cleared issue/cancel/cleanup times, DELETE/TRUNCATE fail exact guards. No-op matching rows remain unchanged. |
-| S5 grant truth | Pending→issued once, unknown commit represented uncertain with issued_at NULL, late acknowledgement keeps that null and uncertainty, issued expiry never becomes no-effect, cancelled/expired never admit. Exact pure parser readback must agree with DB combinations. |
-| R1 same attempt | Two independent sessions contend on gate/run/attempt. Observe blocking through pg_blocking_pids; after release exactly one claim/lease identity exists, loser rereads without a second intent. Service admission proof required, not only unique-index failure. |
-| R2 capacity | Different owners race at global2/per-owner1. All insertions take gate; a terminal expired unknown claim remains counted. A blocked uncommitted release cannot admit over capacity; a committed authoritative release permits exactly one new claim. |
-| R3 settlement/release | Real service rejects release while logical run/attempt nonterminal, operation pending, receipt/identity changed or cleanup unknown; never-submitted and exact removed terminal cases release once. Raw row CHECK tests cannot substitute for this provenance proof. |
-| R4 grant CAS/cancel | Two workers use same revision/action; exactly one newly committed admission, stale/replayed status produces no synthetic transport call. Both cancellation/issue and expiry/issue orders persist one coherent result. Unknown commit/send retains tombstones and never invokes transport twice. |
-| R5 shared ordering | Observe membership removal/claim, connection revoke or replacement/future issuance, renewal/cancellation/release and existing deferred attempt-pointer triggers on independent sessions. No later capacity acquisition or DB/file-lock inversion. Credential races remain gated until their extension exists. |
+| Future proof ID         | Exact observable and boundary                                                                                                                                                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1 schema positive      | Explicit synthetic singleton, valid owned run/attempt lease, claim and pending activate/input grants commit. Read exact columns/canonical bytes/revisions back from fresh clients.                                                                                                                            |
+| S2 identity/FKs         | Missing attempt, foreign run/owner, wrong policy FK, duplicate attempt/action/sequence/claim operation or installation receipt fail the named23503/23505 constraint. Multiple NULL receipts are allowed. No owner-triple credential FK appears.                                                               |
+| S3 closed rows          | Nonnull fixture credentials, unsupported kind/version, oversize/malformed JSON, invalid digest, counters/time infinity/chronology, incomplete pending/cleanup pairs and release with missing cleanup/pending absence fail named23514 checks.                                                                  |
+| S4 immutable/tombstones | Attempt/lease/spec/identity/action/expiry changes, receipt replacement, release resurrection, revision rollback/jump/exhaustion, issued→pending, acknowledged→unknown, cleared issue/cancel/cleanup times, DELETE/TRUNCATE fail exact guards. No-op matching rows remain unchanged.                           |
+| S5 grant truth          | Pending→issued once, unknown commit represented uncertain with issued_at NULL, late acknowledgement keeps that null and uncertainty, issued expiry never becomes no-effect, cancelled/expired never admit. Exact pure parser readback must agree with DB combinations.                                        |
+| R1 same attempt         | Two independent sessions contend on gate/run/attempt. Observe blocking through pg_blocking_pids; after release exactly one claim/lease identity exists, loser rereads without a second intent. Service admission proof required, not only unique-index failure.                                               |
+| R2 capacity             | Different owners race at global2/per-owner1. All insertions take gate; a terminal expired unknown claim remains counted. A blocked uncommitted release cannot admit over capacity; a committed authoritative release permits exactly one new claim.                                                           |
+| R3 settlement/release   | Real service rejects release while logical run/attempt nonterminal, operation pending, receipt/identity changed or cleanup unknown; never-submitted and exact removed terminal cases release once. Raw row CHECK tests cannot substitute for this provenance proof.                                           |
+| R4 grant CAS/cancel     | Two workers use same revision/action; exactly one newly committed admission, stale/replayed status produces no synthetic transport call. Both cancellation/issue and expiry/issue orders persist one coherent result. Unknown commit/send retains tombstones and never invokes transport twice.               |
+| R5 shared ordering      | Observe membership removal/claim, connection revoke or replacement/future issuance, renewal/cancellation/release and existing deferred attempt-pointer triggers on independent sessions. No later capacity acquisition or DB/file-lock inversion. Credential races remain gated until their extension exists. |
 
 All actual integration scenarios need finite timeouts, explicit ready/blocking handshakes, independent connections, fixed error-code/constraint comparisons, source-bound logs, exact final occupancy and complete fixture/client/container cleanup. No sleeps as lock evidence. No schema-string tests presented as DB enforcement. Schema proofs may exercise direct SQL facts, but authority, full canonical equality, backend settlement and concurrency require the later real service boundary. No operational tests have run for this design.

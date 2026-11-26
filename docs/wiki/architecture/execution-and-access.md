@@ -2,48 +2,46 @@
 
 [Wiki home](../README.md) · [System overview](system-overview.md)
 
-> **Status: required invariants and proposed implementation boundaries.** These are not claims that isolation, durability, or compatibility has been proved. Exact contracts belong to the cited RFCs.
+The rules the server keeps for every piece of work, whoever or whatever started it.
 
-## Keep the actor stable
+## The actor stays stable
 
-Derive the initiating user from the authenticated session or stored routine owner, not model output or a client-supplied user ID. Carry that identity through the bot, conversation, run, delegation, workflow, hook, decision, and connection resolution. Recheck access at dispatch and when a user opens retained resources.
+The initiating user comes from the authenticated session or the stored routine owner, never from model output or a user ID the client sends. That identity is carried through the bot, conversation, run, delegation, workflow, hook, decision, and connection resolution. Access is checked again at dispatch and when a user opens retained resources.
 
-A chief coordinates; it does not gain extra edit authority. Folders cannot change permissions. Native CLI homes, credentials, memory, processes, browser state, and desktop sessions need an actual isolation boundary. A prompt telling a model not to read another user's data is not one.
+A chief coordinates; it does not gain extra edit authority. Folders cannot change permissions. Native CLI homes, credentials, memory, processes, browser state, and desktop sessions sit behind an actual isolation boundary: a prompt telling a model not to read another user's data is not one. How far that boundary goes on one machine, and what Docker adds, is in [runtime modes](../../operations/runtime-modes.md).
 
-Ownership and isolation decisions are assigned to [RFC-001](../../../tasks/001-approve-domain-and-ownership-contracts.md) and [RFC-002](../../../tasks/002-prove-multi-user-execution-isolation.md). Enforcement and connection contracts belong to [RFC-005](../../../tasks/005-enforce-actor-and-resource-access-boundaries.md) and [RFC-007](../../../tasks/007-store-user-owned-connection-references.md).
+## Readiness is confirmed, not a shared flag
 
-## Readiness has evidence, not a shared flag
-
-[Bot configuration](../../../tasks/020-implement-versioned-bot-configuration.md) separates technical prerequisites from user-confirmed onboarding. The evidence is tied to the actor, bot, and relevant configuration/account-binding fingerprint:
+Technical prerequisites and the user's own confirmation are separate. The confirmation is tied to the actor, the bot, and the configuration and account bindings that were tested:
 
 ```text
 Technical setup → bounded real setup conversation → satisfaction question
   → explicit positive user confirmation → ordinary-work admission
 ```
 
-A negative answer returns to refinement. Missing credentials, silence, reactions, stale confirmation, assistant-authored consent, and another user's onboarding cannot satisfy the gate. Meaningful setup changes require revalidation; cosmetic changes need not. The exact meaningful-change rules need an explicit contract, not a wiki guess.
+A negative answer returns to refinement. Missing credentials, silence, reactions, a stale confirmation, consent written by the assistant, and another user's onboarding cannot satisfy the gate. Changing the agent, the model, the personality or the instructions resets readiness; cosmetic changes do not.
 
-A bounded, user-started setup turn is necessary before readiness. It can support authorized self-refinement but cannot spawn delegation, scheduled work, or workflow execution to bypass the gate. The shell and chat therefore precede completed onboarding in the dependency graph. See [RFC-021](../../../tasks/021-build-bot-onboarding-and-settings.md), [RFC-024](../../../tasks/024-build-chat-first-navigation-shell.md), and [RFC-026](../../../tasks/026-connect-private-chat-composer-to-runs.md).
+A bounded setup turn, started by the user, comes before readiness. It can support authorized self-refinement but cannot spawn delegation, scheduled work, or workflow execution to bypass the gate.
 
-## Use one mutation path for forms and chat
+## One mutation path for forms and chat
 
-Record initiating user, proposing bot, target resource, and base version separately. Recheck target edit permission; model-generated text or source content cannot grant it. Show exact proposed changes or a creation summary, then require explicit user approval for bot-proposed mutations. Detect stale versions and duplicate submissions.
+The initiating user, the proposing bot, the target resource, and the base version are recorded separately. Edit permission on the target is checked again; text a model generated, or content from a source, cannot grant it. A bot-proposed change shows the exact changes or a creation summary and waits for the user's explicit approval. Stale versions and duplicate submissions are detected.
 
-Automatic learning is not a prerequisite for user-requested configuration. A self-initiated proposal does not acquire cross-resource authority merely because explicit user-requested assistance can target another resource the user may edit. See [RFC-062](../../../tasks/062-propose-and-display-configuration-diffs.md), [RFC-063](../../../tasks/063-apply-only-explicitly-approved-versions.md), and [RFC-073](../../../tasks/073-configure-resources-through-any-bot-chat.md).
+A proposal a bot makes on its own does not acquire authority over other resources merely because the user could have asked for that change.
 
 ## Durable work is not exactly-once external action
 
-[Run lifecycle](../../../tasks/009-persist-run-lifecycle-and-idempotency.md) and [dispatch/recovery](../../../tasks/010-dispatch-and-recover-durable-work.md) own logical request identity, attempt identity, state, deadlines, cancellation, and recovery. Replayed requests/events must not create duplicate logical jobs. Schedules add occurrence identity; workflow steps retain graph, node, parent, and attempt identity.
+Each run has a logical request identity, attempt identity, state, deadlines, cancellation, and recovery. A replayed request or event does not create a duplicate job: a repeated send with the same request id returns the stored turn. Schedules add occurrence identity; workflow steps keep graph, node, parent, and attempt identity.
 
-Persist completed and uncertain portions. A lost response after an external operation does not prove that the operation failed. Restart, account repair, reconnect, card acknowledgment, or merely opening a result must not cause blind replay. Supported continuation and a new attempt are different choices. Cancellation is not rollback.
+Completed and uncertain portions are both kept. A lost response after an external operation does not prove that the operation failed. Restart, account repair, reconnect, acknowledging a card, or merely opening a result never causes a blind replay. Continuing where the agent supports it and starting a new attempt are different choices. Cancellation is not rollback. What survives a restart is listed in [recovery](../../operations/recovery.md).
 
-Browser/computer takeover also transfers input ownership: suspend automation and sensitive observation before human entry, then explicitly hand back. An expired lease cannot permit two controllers. Required real evidence is assigned to [RFC-074–078 via the integration guide](integrations-and-gates.md).
+Browser and computer takeover also transfers input ownership: automation and sensitive observation are suspended before the person types, and control returns only on an explicit hand-back. An expired lease cannot permit two controllers.
 
 ## Attention is a projection, not another execution engine
 
-[Attention state](../../../tasks/071-define-common-in-app-attention-state.md) uses a stable actor/source/issue-generation identity. Producers from chat, delegation, routines, proposals, browser/computer use, and workflows emit consistent items; sidebar, activity, and [kanban](../../../tasks/072-build-user-attention-kanban.md) consume the same authorized view.
+Attention items have a stable identity made of the actor, the source, and the generation of the issue. Chat, delegation, routines, proposals, browser and computer use, and workflows all produce them the same way; the sidebar, Catch up and the task board read the same authorized view.
 
-| Operation             | Required meaning                                                        |
+| Operation             | Meaning                                                                 |
 | --------------------- | ----------------------------------------------------------------------- |
 | Read/acknowledge      | The user has seen the item; no implied approval or completion.          |
 | Resolve               | The underlying answer, repair, or decision clears that issue.           |
@@ -51,8 +49,8 @@ Browser/computer takeover also transfers input ownership: suspend automation and
 | Cancel work           | An explicit request to the execution owner, not deletion of a card.     |
 | Show result           | An authorized durable link, with partial/uncertain state still visible. |
 
-Source identity prevents duplicate cards after replay. A new failed routine occurrence must not vanish because an earlier occurrence was acknowledged. Revoked links must fail safely without leaking content.
+Source identity prevents duplicate cards after replay. A new failed routine occurrence does not vanish because an earlier occurrence was acknowledged. Revoked links fail safely without leaking content.
 
-## Evidence required
+## How these rules are checked
 
-Use focused fixtures for state transitions, stale versions, duplicate requests, and A/B access cases. Use approved real runtime probes for process/profile/desktop isolation and harness behavior. [RFC-066](../../../tasks/066-verify-cross-user-isolation-end-to-end.md) owns cross-user evidence; [RFC-067](../../../tasks/067-verify-representative-v1-user-workflows.md) owns connected user journeys. Neither a UI-only test nor a fixture adapter proves the runtime boundary.
+State transitions, stale versions, duplicate requests, and access between two users are covered by focused tests. Process, browser and desktop isolation are covered by suites that run on real containers (`ZETTA_DOCKER_TEST=1`, `ZETTA_VM_TEST=1`). The end-to-end scripts are in [`scripts/e2e`](../../../scripts/e2e).

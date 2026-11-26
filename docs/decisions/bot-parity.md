@@ -2,7 +2,7 @@
 
 Checked on 2026-11-15: every feature a person has in the web app, against the tools a bot has (`zetta:<kind>` blocks, the Chief's `zetta:*` setup tools, and the Zetta MCP server). Rule going forward: **a feature that a person has ships with its bot tool**, or is written down here as human-only on purpose.
 
-A bot tool never skips a person's decision. A change a bot asks for is a card the person approves (the Chief's setup tools), or it applies at once only where it is the bot's own work (its tasks, its memory, its own routines).
+A bot tool never skips a person's decision. A change a bot asks for is a card the person approves (the Chief's setup tools), or it applies at once only where it is the bot's own work (its tasks, its memory, its own routines). None of it applies at once for a bot someone else owns (see `ownership.md`).
 
 ## Added on 2026-11-15
 
@@ -102,7 +102,7 @@ Human only, on purpose: the **do-not-call list** (administrators add and remove 
 | Keep, drop, bring back, accept or turn down a lesson | `zetta:lessons` keep, drop, restore, accept, reject (Chief, a card each time), MCP `change_lessons` (write scope)       | Nothing is deleted: a dropped lesson is archived and comes back with restore. A workflow's `zetta` step uses the same tool.                   |
 | Weekly lesson check                                  | Workflow tool kind `zetta`, target `lessons` (list, stats, keep, drop, restore, accept, reject)                         | A write step must follow an approval step, like every tool that changes something. The Lessons page adds the ready-made check with one click. |
 | Every bot knowing what it learned                    | No tool: each bot's prompt already carries its own "YOUR LESSONS" block                                                 | A separate read tool for every bot would add tokens to every turn for what the prompt already says. Decided on 2026-11-18.                    |
-| Tidy-up suggestions, "is it getting better?"         | None for bots yet (web app only)                                                                                        | Suggestions are accepted by the person on the Lessons page. The weekly trend is on the bot's Quality tab. **Not done:** a Chief read of both. |
+| Tidy-up suggestions, "is it getting better?"         | None for bots yet (web app only)                                                                                        | Suggestions are accepted by the person on the Lessons page. The weekly trend is on the bot's Quality tab. The Chief reads neither.            |
 
 ## Added on 2026-11-23 (server settings)
 

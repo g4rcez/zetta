@@ -10,8 +10,6 @@ Creation approval covers only this fresh local VM from the cached base and its i
 
 Before any software installation, prepare a separate exact source/version/install manifest and approved network policy. Before executing attempts, build/pin the reviewed fixture image, provision mTLS/runner/cleanup/journal policy, then prove actual A/B containment, independent deadlines, owner-crash cleanup and uncertainty. GUI/native/provider tests retain their own accepted boundaries. Task completion does not require deleting the VM without explicit user request; retain its exact identity for review and later cleanup.
 
-Approval source: tasks/README.md requires authorization for genuinely new infrastructure/environment changes. Creation/isolation and the separate exact tool installation were explicitly approved; unrelated code/schema/disposable PostgreSQL work continues independently.
-
 ## Approved creation receipt
 
 The user explicitly answered “Approve the dedicated test VM” on2026-10-22. VMPal created only `zetta-v1-runtime`, ID `1FB29298-C5D4-4056-AC29-A174E1A43F50`, at its managed location. The existing `niri` VM was not changed. The new VM uses the cached Pop!_OS base with2CPU/6GiB/64GB, user `zetta`, GPU off and installUpdates false. Readback during OS installation confirmed agentControl true, sharedFolders/forwardedPorts empty, network/clipboard/dragAndDrop/microphone/speakers false, and no pending settings. Account credentials returned by VMPal are not copied into project evidence.

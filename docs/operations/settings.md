@@ -72,13 +72,13 @@ One-time key typed in the browser at first-run onboarding. Use a value different
 
 ### `ZETTA_COOKIE_SAMESITE`
 
-Optional · secret: kept encrypted or out of logs, never shown
+Optional · not secret
 
 Session cookie SameSite: none (default, the desktop app needs it), lax or strict. A web-only install should use lax.
 
 ### `ZETTA_TRUSTED_IP_HEADER`
 
-Optional · secret: kept encrypted or out of logs, never shown
+Optional · not secret
 
 Header your reverse proxy sets with the real client address (for example x-forwarded-for or cf-connecting-ip); sign-in rate limits count per that address. Unset: the socket address is used. Only set it when the proxy always overwrites or appends the header.
 

@@ -107,7 +107,7 @@ create policy workspace_wall on zetta.<t> to zetta_app
 - Each guarded handler runs inside `tenant.run`.
 - The web app moves to `/w/$slug/...` routes, so the workspace lives in the URL per tab (project rule: state in the URL).
 
-**MCP:** the resource URL is per workspace, `/api/mcp/w/:workspaceId`, used as the token audience (`mcp-guard.ts:85`). `actorFor(sub, workspaceId)` replaces the current call at `services.ts:492`. _Unverified:_ whether better-auth `mcp()` accepts more than one resource. The fallback is a workspace claim from `oauth_consent.reference_id`.
+**MCP:** the resource URL is per workspace, `/api/mcp/w/:workspaceId`, used as the token audience (`mcp-guard.ts:85`). `actorFor(sub, workspaceId)` replaces the current call at `services.ts:492`. _Open:_ whether better-auth `mcp()` accepts more than one resource. The fallback is a workspace claim from `oauth_consent.reference_id`.
 
 **Background work:**
 
@@ -206,7 +206,7 @@ create policy workspace_wall on zetta.<t> to zetta_app
 ## Risks / open
 
 1. **AsyncLocalStorage context captured by a long-lived timer.** It writes to the wrong workspace, and RLS cannot catch that. Mitigation: boot-time schedulers outside any context, plus assertions.
-2. **MCP:** support for a resource per workspace in better-auth is unverified.
+2. **MCP:** whether better-auth supports a resource per workspace is an open question.
 3. **Container network:** whether Postgres is reachable depends on the host (Docker Desktop vs Linux). It needs the container check above.
 4. **Retention window for deleted data in backups:** not decided.
 5. **Desktop and CLI workspace selection:** not yet designed. The desktop app is a webview, so the `/w/$slug` routes probably cover it.

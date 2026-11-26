@@ -1,4 +1,4 @@
-# Recovery boundaries (RFC-065)
+# Recovery boundaries
 
 What survives a restart, and what is reconciled at boot (`index.ts` calls these once):
 
@@ -12,14 +12,14 @@ What survives a restart, and what is reconciled at boot (`index.ts` calls these 
 | Laya model                                                                            | Reloaded in the background                                                                                                                                                                        |
 | Idempotent retries                                                                    | A repeated send with the same `clientRequestId` returns the stored turn; a repeated run-now/workflow request key returns the same run                                                             |
 
-Operator checklist: back up the Postgres volume (`zetta_postgres_data`; with the [embedded Postgres](../decisions/embedded-postgres.md), stop Zetta and copy `~/.zetta/postgres/data`) and `ZETTA_CONNECTION_KEY` (without it stored connections cannot be decrypted; the server then runs with connections disabled and says so). Restore drill (disposable): restore a dump into a scratch database, run `drizzle-kit migrate`, start the server against it and open `/chat`. **The disposable restore drill was executed on 2026-10-23** against the local compose Postgres: see [restore-drill.md](../verification/restore-drill.md) (dump, restore into a scratch database, migrate no-op, server boots and boot-recovery runs).
+Operator checklist: back up the Postgres volume (`zetta_postgres_data`; with the [embedded Postgres](../decisions/embedded-postgres.md), stop Zetta and copy `~/.zetta/postgres/data`) and `ZETTA_CONNECTION_KEY` (without it stored connections cannot be decrypted; the server then runs with connections disabled and says so). Restore drill (disposable): restore a dump into a scratch database, run `drizzle-kit migrate`, start the server against it and open `/chat`.
 
 ## Single instance, boot sweeps and migrations (2026-10-26)
 
-- Zetta assumes **one process that owns running work per installation** (`ZETTA_ROLE=all`, or the single `worker` when API instances run beside it: see [scaling.md](scaling.md)). Recovery of interrupted work is owner-scoped (see [scaling.md](scaling.md#instances-and-recovery)): it takes only work whose server instance is dead. The container sweeps are not scoped yet: at boot the process kills harness containers (`zetta-run-*`), browser containers (`zetta-browser-*`) and desktop Spaces (`zetta-<12 hex>`) left by a previous process; a second instance on the same Docker/Cua host would have its containers swept.
+- Zetta assumes **one process that owns running work per installation** (`ZETTA_ROLE=all`, or the single `worker` when API instances run beside it: see [scaling.md](scaling.md)). Recovery of interrupted work is owner-scoped (see [scaling.md](scaling.md#instances-and-recovery)): it takes only work whose server instance is dead. The container sweeps are not scoped by instance: at boot the process kills harness containers (`zetta-run-*`), browser containers (`zetta-browser-*`) and desktop Spaces (`zetta-<12 hex>`) left by a previous process; a second instance on the same Docker/Cua host would have its containers swept.
 - Browser and desktop session starts are serialized per user, so two simultaneous requests cannot launch two sessions or exceed the per-user limit.
 - Secrets passed to Docker harness runs travel through the process environment (`docker run -e KEY`), never in argv, so other local users cannot read them with `ps`.
 - Decision calls have a bounded backlog (32 total, 4 per user); beyond that they fail fast as "unavailable".
 - Migrations are applied in order with `drizzle-kit migrate` (the embedded Postgres applies them at boot, after copying the data folder to `~/.zetta/backups`); each is additive except the snapshot trigger (`snapshot-no-unrevoke`), which only tightens an existing rule. Run migrations from one process at a time (take the restore drill dump first).
-- Workflows and routines refuse bots that need the user's own accounts until per-run account injection exists for automated runs.
+- Workflows and routines refuse bots that need the user's own accounts: an automated run has no person to lend them.
 - File access refuses credential-like names (`.env*`, keys, `credentials*`, `.ssh`, `.git`, ...), backslashes and control characters, resolves real paths, and opens files with `O_NOFOLLOW` on POSIX.

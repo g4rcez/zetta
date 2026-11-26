@@ -36,6 +36,8 @@ Shared bot definition visibility does not expose account bindings, native runtim
 
 Interactive work uses the initiating user's authorized connections. Delegation, hooks, retries, decisions and manual workflows preserve that actor. Schedules and scheduled workflows derive identity from the stored routine owner. Server-derived fields include actor/owner, membership, authorized resource scope, pinned configuration version, readiness bindings, and publication cutoff. Do not trust client/model assertions of those fields.
 
+A bot someone else owns follows its owner's words while it runs with the authority of the person asking, so it gets less than that person's own bots (`chat/shared-bot-policy.ts`). It cannot change the person's bots, and it gets none of their MCP servers, GitHub token, browser, computers, saved machines or vault. It reads and speaks; every lasting write is a card the person answers each time, with no "Always allow", and a bot it proposes is private. In a room where such a bot takes part, the person's own bots also run no code and use no computer, and their writes wait the same way. Provider keys a bot declares are still taken from the person asking.
+
 A chief has orchestration duties, not additional authority. Any bot may assist a user-directed edit only if that user can edit the target. Autonomous self-proposals remain scoped to the proposing bot. Bot-proposed changes require an exact version-bound diff/creation summary and explicit authorized approval. Forms and chat share validation. Readiness requires technical prerequisites plus a real setup conversation and explicit positive satisfaction for that user's tested setup; it is rechecked after meaningful changes and access revocation.
 
 ## Removal and recovery
@@ -55,7 +57,7 @@ All current active installation members, including later joiners, can view an ac
 - B substitutes A's resource IDs or an admin requests private content: deny without metadata leakage.
 - Routine/delegation preserves its originating actor; configuration cannot change it.
 - A publishes: B sees only the frozen safe content; original resources and later messages remain private.
-- A is removed or publication withdrawn: deny old links and new execution; retain history under the pending retention policy.
+- A is removed or publication withdrawn: deny old links and new execution; retain history.
 - A publishes a memory item: B's bots find and read it, cannot write it, and send suggestions; A's removal or unpublish hides it from B at once. A's private pages never reach B.
 
-Evidence: source review in RFC-001 foundation scout; owner approval in the implementation conversation. No runtime isolation, database constraint, schema, or auth modification is proved by this policy review. See [RFC-001](../../tasks/001-approve-domain-and-ownership-contracts.md), [implementation plan](../../tasks/plan.md), and [intent](../intent/zetta-v1.md).
+Related: [intent](../intent/zetta-v1.md).

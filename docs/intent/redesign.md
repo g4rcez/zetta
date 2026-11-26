@@ -1,6 +1,6 @@
 # Redesign: chat-first workspace
 
-Status: confirmed intent. Authority: the user pinned the direction in the interview (Linear as the UX reference, emerald, Geist, one sidebar, 7:1 contrast); no Impeccable concept roll was run, so there is no seed reference. [DESIGN.md](../../DESIGN.md) is the target system. The work is RFC-083 to RFC-088 in [TASKS.md](../../TASKS.md#21-redesign). This redesign replaces the visual reference in [zetta-v1](zetta-v1.md); the product scope there is unchanged.
+Status: confirmed intent. Authority: the user pinned the direction in the interview (Linear as the UX reference, emerald, Geist, one sidebar, 7:1 contrast); no Impeccable concept roll was run, so there is no seed reference. [DESIGN.md](../../DESIGN.md) is the target system. This redesign replaces the visual reference in [zetta-v1](zetta-v1.md); the product scope there is unchanged.
 
 ## Intent
 
@@ -12,23 +12,3 @@ Status: confirmed intent. Authority: the user pinned the direction in the interv
 - **Themes:** semantic tokens only; a new scheme is new values for the same tokens.
 - **References:** Linear for the UX and visual quality; agentes.chat for the mental model only (channels and agents in one sidebar). Copy neither one's branding, text or exact layouts.
 - **Out of scope:** chat data-model changes and color schemes other than light and dark.
-
-## Phases
-
-Each phase ships alone and leaves the app working.
-
-| Phase                          | RFC                                                                         | Gate                                        |
-| ------------------------------ | --------------------------------------------------------------------------- | ------------------------------------------- |
-| Tokens and the contrast guard  | [RFC-083](../../tasks/083-apply-redesign-tokens-and-contrast-guard.md)      | none                                        |
-| Shell and sidebar              | [RFC-084](../../tasks/084-rebuild-sidebar-shell-for-chat-first-redesign.md) | coordinate with open edits to `sidebar.tsx` |
-| Per-user bot order             | [RFC-085](../../tasks/085-persist-per-user-bot-order.md)                    | schema change needs approval                |
-| Chat surface and context panel | [RFC-086](../../tasks/086-restyle-chat-surface-and-context-panel.md)        | none                                        |
-| Remaining pages                | [RFC-087](../../tasks/087-restyle-remaining-pages-to-tokens.md)             | none                                        |
-| Accessibility and finish       | [RFC-088](../../tasks/088-verify-redesign-accessibility-and-finish.md)      | approved browser runs                       |
-
-## Risks
-
-- `@g4rcez/components` may hard-code values that do not follow the `--var-*` bridge. RFC-083 lists them; RFC-087 fixes them.
-- The contrast guard must compute tints the same way the CSS mixes them (OKLCH), not in sRGB.
-- Light-mode emerald (`#015A45`) is much darker than the brand `#29A383`. This is the cost of 7:1.
-- `.impeccable/design.json` still describes the old design until RFC-088 regenerates it.

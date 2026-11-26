@@ -2,8 +2,6 @@
 
 [Wiki home](../README.md) · [Glossary](../glossary.md)
 
-> **Status: intended v1 journeys.** Learning, routines, and visual workflows are required; this guide does not claim their implementation is complete.
-
 ## Choose the right kind of change
 
 | Your goal                                  | Use                                     | Example                                                                                 |
@@ -18,14 +16,14 @@ A workflow describes the steps and conditions. A routine describes when a task o
 
 ## Correct a mistake
 
-1. Open the result and inspect the recorded knowledge sources, when available. Zetta must not invent an explanation of why the model answered incorrectly.
+1. Open the result and inspect the recorded knowledge sources, when available. Zetta does not invent an explanation of why the model answered incorrectly.
 2. Open the memory item the answer used (the notes under the answer link to it) and correct it, archive it, or update the method it describes.
 3. Return to the original result. The historical answer stays unchanged.
 4. In a later task, check that the corrected knowledge is selected and forgotten knowledge is excluded from retrieval.
 
-A better-sounding answer is not enough to prove the correction was used. Forgetting a memory is also not a promise to erase historical messages or published snapshots. Retention and deletion rules need an explicit implementation decision.
+A better-sounding answer is not enough to prove the correction was used. Forgetting a memory is also not a promise to erase historical messages or published snapshots.
 
-Learning can retain scoped facts and procedures without asking for approval on every ordinary learning event. It must not silently change bot configuration or promote your private knowledge to shared use. A learning receipt should explain what was retained and link to inspection, correction, or deletion.
+Learning can retain scoped facts and procedures without asking for approval on every ordinary learning event. It never silently changes bot configuration or promotes your private knowledge to shared use. A learning receipt explains what was retained and links to inspection, correction, or deletion.
 
 ## What your bots learn, and how to keep only what helps
 
@@ -58,10 +56,6 @@ Saving a draft is not activation. Missing onboarding or account access blocks ac
 
 ## Add conditions with a visual workflow
 
-Use the visual editor or its accessible form/list alternative to describe bot tasks and conditions. Review which path runs for each outcome, then publish a version and test deliberately. Editing a draft must not silently change a published graph or a running execution.
+Use the visual editor or its accessible form/list alternative to describe bot tasks and conditions. Review which path runs for each outcome, then publish a version and test deliberately. Editing a draft does not change a published graph or a running execution.
 
-The initial graph catalog is a technical proposal awaiting acceptance, not full n8n parity. Inspect which steps completed, failed, were blocked, or were skipped by a branch. Workflow blockers use the same [attention and repair path](work-and-attention.md) as chat and routine work. Restart must not replay uncertain external actions.
-
-## Implementation owners
-
-[Memory correction: RFC-058](../../../tasks/058-inspect-correct-and-forget-memories.md), [instruction library: RFC-059](../../../tasks/059-build-versioned-instruction-library.md), [learning: RFC-061](../../../tasks/061-learn-reusable-procedures-after-tasks.md), [configuration approval: RFC-063](../../../tasks/063-apply-only-explicitly-approved-versions.md), [routine editor: RFC-040](../../../tasks/040-build-routine-calendar-and-editor.md), and [workflow graph](../../../tasks/079-define-versioned-conditional-workflow-graphs.md), [execution](../../../tasks/080-execute-durable-workflow-steps.md), [editor](../../../tasks/081-build-visual-workflow-editor.md), and [inspection](../../../tasks/082-inspect-workflow-progress-and-repair-paths.md).
+The catalog of steps is small on purpose; it is not full n8n parity. Inspect which steps completed, failed, were blocked, or were skipped by a branch. Workflow blockers use the same [attention and repair path](work-and-attention.md) as chat and routine work. A restart does not replay uncertain external actions.

@@ -39,14 +39,13 @@ The four presets were not enough, so every number of the feature is a per-bot se
 - Clipping is by bytes and never splits a character (`clipBytes`); a huge Chinese or emoji message used to be cut by characters and could be three times the budget.
 - The form speaks bytes and shows about how many tokens that is (÷4, English; other languages use more). `cutPoint` still counts 12 bytes of overhead a message (a little more than `buildHistory`'s `role.length + 3`), which only makes the summary start a little earlier.
 - The Chief can read and change all five through `zetta:bot update` (a card); `get` shows them. They are part of a bot's versions, so History lists them and a restore brings them back.
-- Not done: a per-bot choice of the summary's model apart from its engine; counting real tokens (bytes ÷ 4 is an estimate).
+- Out of scope: a per-bot choice of the summary's model apart from its engine; counting real tokens (bytes ÷ 4 is an estimate).
 
 ## Searching earlier chats
 
 `zetta:chats {"action":"search","query","bot?","since?","limit?"}`, for every bot. Always the asker's own chats (never the bot owner's). Left out: the chat it is in, archived chats, outside people's chats, rooms, routine and memory-job chats, and the chats of saved tests. Hits come back as untrusted data with the chat's title and date. Inbound turns drop the tool (they only keep their reply tool). The Chief's preamble cap in `tool-preamble.test.ts` was raised for it.
 
-## Not done
+## Limits
 
 - No embedding of messages: search is full text (`simple` dictionary, accents folded). Memory items remain the place for lasting knowledge.
 - The summary is per bot and chat; a chat with several bots keeps one per bot.
-- Nothing checked yet with a real long chat on a real model except the scripted run in `docs/verification/e2e`.

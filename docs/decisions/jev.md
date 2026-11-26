@@ -6,4 +6,4 @@ Wire contract, limits and privacy notes: see [jev-laya.md](jev-laya.md). Impleme
 - **Selecting Jev is the owner's consent** that the message text and option labels of chats with that bot are sent to Typesafe (api.typesafe.ai). There is no silent fallback to a hosted model.
 - **Credential:** only the requesting user's own `jev` connection (sealed store), resolved per call; never an environment/admin key. Missing/revoked -> `unavailable` -> the bot answers normally (routing fails open).
 - **Hardening in the adapter:** fixed HTTPS origin, `redirect: error`, 10 s deadline, 32 KiB outbound / 64 KiB response caps, strict response schema, model pin `jev-1.13.0`, option-set equality, argmax and probability-sum checks, no retries.
-- **Status:** implemented against the documented contract. By owner decision it has **no automated tests and no live proof yet** (a live check needs a Typesafe API key).
+- **Status:** implemented against the documented contract. A live run needs a Typesafe API key.

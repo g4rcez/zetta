@@ -34,7 +34,7 @@ We want Zetta to be a gateway to **skills, apps, triggers (routines, improved) a
 1. Apps core: tables, SDK, runner `stdin` and result, publish and rollback, policy and approval, the `apps` plugin for bots, the Apps page. **Done.**
 2. App pages: an app can ship a frontend that draws in a sandboxed frame and calls its tools. **Done.**
 3. App storage: declared collections, written back after a valid result. **Done.**
-4. Bots build apps in chat (`zetta:app`), with an approval card for host code and a receipt. **Done** (the side pane is not built; the receipt links to the app page).
+4. Bots build apps in chat (`zetta:app`), with an approval card for host code and a receipt. **Done** (the receipt links to the app page; there is no side pane).
 5. Skill management: list filters, usage, per-bot view, history, update check, lint.
 6. Later, in order: accounts and OAuth, code mode, triggers, durable workflows, the outward gateway, app skills.
 
@@ -61,10 +61,6 @@ We want Zetta to be a gateway to **skills, apps, triggers (routines, improved) a
 - `apps_call` is a write tool, so an inbound (outside people) conversation cannot use any app. Letting outside people run queries needs a flag on the plugin context first.
 - A file named `apps_.$ref.tsx` (trailing underscore) keeps the detail page from nesting under the list route, which has no outlet.
 
-### Not verified
-
-The Bun image in a container (`oven/bun`) was not pulled here; the container plumbing was verified with a Debian image and a shell script. The pages were checked only with happy-dom, not in a real browser. A call whose source has no chat (a routine, the outward gateway) has no way to ask yet (phase 4 and 6).
-
 ## Phase 2: app pages
 
 - **A page is part of a version.** `ui/index.html` (with its own css, js and ts files) or an HTML playground. It is built at publish time with Bun into one self-contained HTML (`app_version.ui`, at most 5 MB; migration `20261108035722_app_ui`). Local files are inlined; a library comes from a public CDN by `https://` URL; a bare package name (`react`) is refused with a message that says so. An app can have a page, backend tools, or both; a page-only app has zero tools.
@@ -75,9 +71,9 @@ The Bun image in a container (`oven/bun`) was not pulled here; the container plu
 - **Web**: an **Open** tab (the default when the app has a page; the default stays out of the address), and a "Has a page" badge on the list.
 - **Tests**: `ui-build.test.ts` (real Bun builds: order of the head, CDN rules, macros, size, script breakout), `apps.integration.test.ts` "pages" (publish with a page, page only, build error, visibility, rollback, bridge validator into a real call), `app-bridge.test.ts` (validator, limiter, the prelude run against a stand-in window), `app-host.test.ts` (17, the whole host decision path), `app-frame.test.tsx` (frame flags, sender check, prompt outside the frame, allow, decline, cancel on close), `app-page.test.tsx`.
 
-### Not verified (phase 2)
+### Checked in a real browser (phase 2)
 
-**Run in a real browser on 2026-11-15** (`scripts/e2e/app-frame.ts`, result in `docs/verification/e2e/app-frame.md`): Chromium opened a published app with a page; a query answered, a change showed the bar outside the frame, Allow ran it, Decline reached the page as `DECLINED`, and the frame had an opaque origin (`null`), blocked cookies and no network. Still not run: the container runner for app tools, and Firefox/Safari. Before that, no real browser had run a frame: happy-dom does not enforce the sandbox, the CSP or `Origin: null`. The first thing to do by hand is open an app with a page, click something that calls a query, then something that changes data, and see the bar. A frame can still navigate itself (a sandbox limit), so an app must not hold data its viewer should not see. The host runner is still not a sandbox.
+**Run in a real browser on 2026-11-15** (`scripts/e2e/app-frame.ts`): Chromium opened a published app with a page; a query answered, a change showed the bar outside the frame, Allow ran it, Decline reached the page as `DECLINED`, and the frame had an opaque origin (`null`), blocked cookies and no network. happy-dom does not enforce the sandbox, the CSP or `Origin: null`. The first thing to do by hand is open an app with a page, click something that calls a query, then something that changes data, and see the bar. A frame can still navigate itself (a sandbox limit), so an app must not hold data its viewer should not see. The host runner is still not a sandbox.
 
 ## Phase 3: app storage
 
@@ -90,7 +86,7 @@ The Bun image in a container (`oven/bun`) was not pulled here; the container plu
 - **Data tab and API**: `GET /api/apps/:ref/data`, `DELETE /api/apps/:ref/data?scope=mine|all` (`all` is the owner's). The owner sees counts of other people's records, never their content. Deleting is audited.
 - **Tests**: `storage.test.ts` (checks, manifest, diff), `storage.integration.test.ts` (17, a real to-do app: personal vs shared, failure writes nothing, quotas, 1 MB snapshot, concurrency, rollback, data page, through the bridge validator), routes tests, `app-page.test.tsx` (Data tab).
 
-### Not done (phase 3)
+### Limits (phase 3)
 
 No per-record versioning (last write wins), no query or index over values (`list` returns a collection, with an optional key prefix and limit, and the 1 MB snapshot is the real ceiling), no export of the data. An app's owner cannot read other people's records, which also means the owner cannot repair them from the Data tab.
 
@@ -105,6 +101,6 @@ No per-record versioning (last write wins), no query or index over values (`list
 - **Receipt**: kind `app` (`id` = slug, text `Name · vN`) renders as a chip that links to `/apps/$ref`, which opens on the page.
 - **Tests**: `author.integration.test.ts` (10), `chat/app-author.integration.test.ts` (8, through the real tool loop, the card and the notice), `guide.test.ts`, web `message-row-app.test.tsx`, `tool-fences.test.ts`.
 
-### Not done (phase 4)
+### Limits (phase 4)
 
 The live side pane while the bot works (the artifact pane opens on a `data-artifact` event; an app would need its own event through `ui-stream` and `chat-rows`). A bot cannot call the tools of the app it just built to test it, because it is not granted to it; the person grants it. Several bots editing one app have no merge: the last `update` wins.

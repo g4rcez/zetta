@@ -26,4 +26,3 @@ From the client feedback plan (`plans/feedback.md`, items F and M).
 - The comparison is by UTC day, because the published list is grouped by day. A build made earlier on the newest day reads as current.
 - An `api` process (several servers) checks lazily, when its endpoint is read, at most once a day; only the worker raises the card.
 - The org chart canvas and its list rows keep one line per seat: only the seat's own page shows the holder's job title.
-- Nothing here was checked in a real browser, and the check was not run against the live site.

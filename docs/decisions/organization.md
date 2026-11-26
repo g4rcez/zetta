@@ -72,11 +72,11 @@ The admin found the page hard to use: bots could not be put in seats, and editin
 
 Plain words on screen ("Reports to", "Open seat", "Leads"), every button says what it does, a refusal says why ("A seat cannot report to one of its own reports"), and the outline view does everything the canvas does, because both select a seat and change it in the same panel, so it works on a phone, with the keyboard and with a screen reader.
 
-## Not done
+## Limits
 
 - Delegated rights over a task for a manager who is not the owner.
-- Workspaces: one chart per workspace. `workspaces.md` describes `workspace_id` on `org_chart`, but the workspace tables (its phase P1) do not exist yet, so there is nothing to point at. Add the column when P1 lands.
+- Workspaces: one chart per workspace. `workspaces.md` describes `workspace_id` on `org_chart`, and the column comes with the workspace tables (its phase P1).
 
 ## Verified
 
-Server integration tests on a real database, the web app in a real headless browser (panel, share-on-pick, add under, wheel pan and zoom, search, phone, member view, empty start screen), and a real model: given the turn text of a seated bot and of the Chief, it names the manager and the CEO correctly. A real model's judgment about when to escalate (rather than reading the chart back) has not been tried.
+Server integration tests on a real database, the web app in a real headless browser (panel, share-on-pick, add under, wheel pan and zoom, search, phone, member view, empty start screen), and a real model: given the turn text of a seated bot and of the Chief, it names the manager and the CEO correctly.

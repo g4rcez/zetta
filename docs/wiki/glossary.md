@@ -2,8 +2,6 @@
 
 [Wiki home](README.md)
 
-> **Status:** terms for the intended v1. Names explain the product model; they do not establish an implemented API or final UI labels.
-
 ## Everyday terms
 
 | Term            | Meaning                                                                                                                                                                                                                                                                                      |
@@ -13,7 +11,7 @@
 | Specialist      | A bot with a focused job. You can talk to it directly or use it through your chief.                                                                                                                                                                                                          |
 | Folder          | A visual group of bots, including optional inner groups. It does not change access or create another chief.                                                                                                                                                                                  |
 | Team            | A named group of bots with one chief, and the people who can read its rooms. The owner adds the people. Team-visible bots and published snapshots go to every active installation member instead, not just to a team. A visual workspace is separate from a team.                            |
-| Room            | A shared conversation where bots work on a task together. A room of a team can be read by every person of that team; only its owner posts for now.                                                                                                                                           |
+| Room            | A shared conversation where bots work on a task together. A room of a team can be read by every person of that team; only its owner posts.                                                                                                                                                   |
 | Connection      | Your access to an external account or service. A bot uses your authorized connection, not a teammate's login.                                                                                                                                                                                |
 | Onboarding      | Setup, a real conversation, the bot's satisfaction question, and your explicit positive confirmation.                                                                                                                                                                                        |
 | Ready           | The tested setup is confirmed for you and the bot, and technical prerequisites remain valid. Access is still checked when work starts.                                                                                                                                                       |
@@ -43,4 +41,4 @@
 | Decision provider | An external component used for bounded decisions; Jev and Laya are required integration targets whose exact contracts need verification. |
 | Host-tool bridge  | A controlled path for a harness to call Zetta-owned tools with the current run's authority. A model cannot choose a different actor.     |
 
-For rules, use [privacy and sharing](user-guide/privacy-and-sharing.md) and [execution and access](architecture/execution-and-access.md). For implementation status, use the [backlog](../../TASKS.md).
+For rules, use [privacy and sharing](user-guide/privacy-and-sharing.md) and [execution and access](architecture/execution-and-access.md).

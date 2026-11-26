@@ -1,6 +1,6 @@
 # Zetta v1 — confirmed intent
 
-Status: confirmed by the user in the product interview and subsequent UX refinement. The refinement adds visual workflows, browser/computer use and an attention kanban to v1. Implementation details remain proposals until the relevant RFC gate is accepted.
+The product intent Zetta was built from, confirmed in the product interview and the UX refinement that followed (which added visual workflows, browser and computer use, and an attention kanban). The [README](../../README.md) describes the product as it is today.
 
 ## Outcome and users
 
@@ -59,13 +59,13 @@ A snapshot contains the conversation content at publication time. Later private 
 - **Instructions:** reusable procedures learned from completed tasks and retrieved for similar work.
 - **Configuration:** a bot may propose changes to itself or help configure another resource the user may edit. The user must see the exact diff or creation summary and explicitly approve before bot-proposed changes take effect. Forms and chat share validation and version/conflict rules.
 
-Shared bots must not leak one user's private memory or instructions to another user. Self-learning is not model training. The exact Hermes implementation and compatibility strategy require a source-backed integration decision.
+Shared bots must not leak one user's private memory or instructions to another user. Self-learning is not model training.
 
 ## Design direction
 
-The supplied references establish a chat-first layout, bot sidebar, routine calendar, team grouping, app connection catalog, and harness/model setup cards. Prefer existing shared UI primitives. The user identifies `@g4rcez/components` as the source of the calendar component; verify its availability and API before adding a dependency.
+The supplied references establish a chat-first layout, bot sidebar, routine calendar, team grouping, app connection catalog, and harness/model setup cards. Prefer existing shared UI primitives. The user identifies `@g4rcez/components` as the source of the calendar component.
 
-The repository's older visual draft describes a team chief. This intent supersedes that point: the chief is per user, and workspaces only organize bots. The README explains this product direction; TASKS.md owns implementation order.
+The repository's older visual draft describes a team chief. This intent supersedes that point: the chief is per user, and workspaces only organize bots. The README explains this product direction.
 
 ## Non-goals for v1
 
@@ -74,15 +74,11 @@ The repository's older visual draft describes a team chief. This intent supersed
 - Model training, billing, public SaaS tenancy, or a new native desktop client. Isolated computer-use execution is required; a standalone desktop app is not.
 - Automatically treating every integration named in the README as a required bespoke connector.
 
-Browser/computer use is required in v1. Profiles may be dedicated per bot or explicitly shared among the same user's bots; never across users or implicitly through a workspace. The chosen runtime, provider, supported versions, safe takeover and isolation still need evidence. This is a technical selection gate, not a gate on whether to include the feature.
+Browser/computer use is required in v1. Profiles may be dedicated per bot or explicitly shared among the same user's bots; never across users or implicitly through a workspace.
 
-The initial connector set and concrete Hermes/Jev/Laya products/protocols still need compatibility decisions. Full n8n parity, a separate artifact-management product and external push/email/mobile notifications are not required.
+Full n8n parity, a separate artifact-management product and external push/email/mobile notifications are not required.
 
-## Next artifacts
+## See also
 
 - [Wiki: user journeys and architecture](../wiki/README.md)
-- [Refinement and assumptions to validate](../wiki/product-refinement.md)
-- [Implementation plan](../../tasks/plan.md)
-- [Ordered RFC backlog](../../TASKS.md)
-
-This document records product intent. The backlog records proposed implementation slices; neither authorizes dependency installation, production changes, or deployment.
+- [Operations](../operations)

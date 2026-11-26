@@ -1,6 +1,6 @@
 # Embedded Postgres for local installs
 
-Status: built 2026-11-10 for macOS and Linux. Windows has no runtime archive yet. The compiled server binary carries the database but does not start yet for an unrelated reason (see "Not done").
+Status: built 2026-11-10 for macOS and Linux. Windows has no runtime archive. The compiled server binary carries the database but does not start for an unrelated reason (see "Platform limits").
 
 ## Decision
 
@@ -38,13 +38,13 @@ Code: `packages/db/src/embedded/`.
 
 ## Sizes (measured 2026-11-10)
 
-|                                                 | macOS arm64 | Linux arm64  |
-| ----------------------------------------------- | ----------- | ------------ |
-| Runtime archive                                 | 18.9 MB     | 15.6 MB      |
-| Compiled server with the archive and migrations | 93.9 MB     | not built    |
-| Compiled server without them                    | 74.5 MB     | not built    |
-| Unpacked runtime on disk                        | 76 MB       | not measured |
-| Data folder after all migrations                | 72 MB       | not measured |
+|                                                 | macOS arm64 | Linux arm64 |
+| ----------------------------------------------- | ----------- | ----------- |
+| Runtime archive                                 | 18.9 MB     | 15.6 MB     |
+| Compiled server with the archive and migrations | 93.9 MB     | —           |
+| Compiled server without them                    | 74.5 MB     | —           |
+| Unpacked runtime on disk                        | 76 MB       | —           |
+| Data folder after all migrations                | 72 MB       | —           |
 
 First start from an empty folder (unpack, `initdb`, 121 migrations) took 12 seconds on macOS arm64.
 
@@ -56,9 +56,8 @@ First start from an empty folder (unpack, `initdb`, 121 migrations) took 12 seco
 - A compiled binary holding only the database code, run from an empty folder.
 - The Linux arm64 archive, built and started in a container.
 
-## Not done
+## Platform limits
 
 - **Windows.** No archive: pgvector needs an MSVC build. The loopback transport written for it has only run on macOS (when the folder path is too long for a socket).
-- **macOS x64 and Linux x64 archives** are in the workflow but have not been built yet.
 - **The compiled server does not start**: `onnxruntime-node` (used by Laya) fails to load inside `bun build --compile`. It also does not serve the web UI, and it needs its secrets in the environment.
 - `install.sh` and `docker-compose.yml` still use the Postgres container.

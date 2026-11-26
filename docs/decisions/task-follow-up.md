@@ -25,7 +25,7 @@ A bot that takes on work of several steps writes **one task with subtasks** (`ze
 
 The result of a bot's own `task add` or `update` is a line the server wrote (ids, or why a rule refused), so a round with only those calls does not mark the turn as having read outside content. Without this, every step update after the first would turn into an Approve card. `task list` and `task get` still do: they return text other bots and people wrote. After outside content a bot's task writes still apply at once, for every bot: `task add` (also for another person and under any parent) and `task update` (also of a task made on the board or by another bot), and a member's `zetta:assign`. Changed on 2026-11-14 by the owner's decision: a card per task blocked the work, and the board is the user's own. The store still limits it: every write runs as the owner, and a task for another person must be a live person of an active team of the owner. Still held: `task remove` is the Chief's and always a card, and an inbound chat (answering outside people) drops task and assign calls. A card raised before this change still runs its task calls when approved. The progress note and the titles come back to the bot as data (fences defused), like a loop's lessons.
 
-## Not done
+## Limits
 
 - Tasks that `zetta:assign` puts on a member in a room are not followed; the member's own tasks (added by the member) are.
 - No separate view of every followed task or of the check history; the task page shows the state, the next check and the note.

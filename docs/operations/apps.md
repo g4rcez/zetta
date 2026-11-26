@@ -39,7 +39,7 @@ Save it, press **Publish** (next to Save), then open **Apps** (under More in the
 | `description`                     | What it does. Bots read this to pick a tool.                                                                                                                                                                              |
 | `input`, `output`                 | Built with `t.object`, `t.string`, `t.number`, `t.integer`, `t.boolean`, `t.array`, `t.json`; add `.optional()`, `.default(x)`, `.describe(text)`. The server checks the input before the tool runs and the output after. |
 | `approval`                        | `"always"`, `"never"`, or `{ when: [{ path: "n", op: "gt", value: 100 }] }` (operators: eq, neq, gt, lt, contains, exists).                                                                                               |
-| `accounts`, `account.apiKey(...)` | Declared now; connecting accounts comes in a later phase. A tool that needs one cannot run yet.                                                                                                                           |
+| `accounts`, `account.apiKey(...)` | Declares the accounts a tool needs. Apps have no account connections, so a tool that needs one does not run.                                                                                                              |
 | `storage`                         | `{ collections: ["todos"], shared: ["settings"], write: true }`: what the tool may read and (a mutation only) write. See Storage below.                                                                                   |
 
 The handler gets `(ctx, input)`; `ctx.log(...)` writes to the run's error output. An error you throw becomes the tool's failure message (set `error.code` to give it a code).
@@ -115,9 +115,9 @@ Each **Publish** makes an immutable version with the files and the tools they de
 
 **Share with the team** lets every member call the app's tools, each with their own history. Only you publish, change policies, roll back or archive. A team member's bots are theirs to grant.
 
-## Limits and what is not done yet
+## Limits
 
 - Backend code is TypeScript or JavaScript only. Up to 50 files, 1 MB of source, 100 tools, 100 apps per person. A call has 30 seconds.
-- **The host runner is not a sandbox.** Code runs as the server user, like a bot's shell, so publish only code you trust. Set the playground to the container runner to keep it off the host; the container passes the payload on stdin and reads `result.json`, which was verified on Podman with a Debian image. The Bun image itself was not pulled here.
-- Not built yet: accounts and OAuth, code mode (a program that chains tools), triggers and workflows that call tools, the outward `/api/mcp` tools, bots using apps from outside chats.
-- A call from something with no chat (a routine, the gateway) cannot ask for approval yet.
+- **The host runner is not a sandbox.** Code runs as the server user, like a bot's shell, so publish only code you trust. Set the playground to the container runner to keep it off the host; the container passes the payload on stdin and reads `result.json`.
+- Apps have no accounts or OAuth, no code mode (a program that chains tools), no triggers or workflows that call tools, and no tools on the outward `/api/mcp`. Bots use apps from chats only.
+- A call from something with no chat (a routine, the gateway) cannot ask for approval.

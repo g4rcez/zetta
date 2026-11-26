@@ -1,7 +1,5 @@
 # Jev and Laya decision contracts
 
-Status: source-backed proposal, 2026-10-22. Bounded [046a research](../../tasks/046a-identify-decision-products.md) supplies inputs to RFC-046/048; it does not complete those parents, RFC-007 or their adapter prerequisites. No service, account, model request or native profile was used. All external sources were accessed 2026-10-22.
-
 ## Motivation and constraints
 
 Zetta needs both Jev and Laya to make bounded decisions within a run. Neither becomes the primary conversational harness or gains authority to execute an action. The current actor, allowed candidates, context provenance, account and deadline come from Zetta. Model output selects from those candidates; deterministic authorization and browser/tool guards still control execution.

@@ -1,7 +1,5 @@
 # Membership activation revision
 
-Status: revised005g1 design accepted after [coordinator review](../reviews/membership-activation-005g1-review.md),2026-10-22. Design only. Implements the prerequisite selected in [dispatch claim store](dispatch-claim-store.md), coordinated with [identity lock order](identity-lock-order.md). No schema, migration, lifecycle service or deployed permission change has occurred.
-
 ## Current source and boundary
 
 [Membership](../../packages/db/src/schema/identity.ts:6) has one persistent user-keyed row, active/removed status and timestamps; no enrollment generation. Its auth-user FK restricts deletion/update. The installation pointer references the active member composite key, so removing the current admin is already prohibited. [Runs](../../packages/db/src/schema/runs.ts:13) retain a restrictive owner FK to membership. Neither a current active status nor a freshly issued actor proves uninterrupted membership since a queued run or readiness confirmation was recorded.
@@ -75,18 +73,18 @@ Identity signup/enrollment/admin/credential/browser proofs all call openIdentity
 
 Actual proof matrix must retain safe named PASS/constraint/state oracles, no raw SQL/private values:
 
-| Scenario | Required binary observable |
-| --- | --- |
-| Legacy active and removed backfill | Existing synthetic rows become1, status/timestamps unchanged; legacy009 tuple remains NULL when that later migration exists |
-| New active/removed row and invalid initial revision | Default/explicit1 succeeds;0,2,MAX,NULL rejected by exact named check/guard |
-| Lifecycle transitions and MAX | Removed1→active2 succeeds; active/removal preserve; reset/jump/missing increment denied; MAX activation exact exhaustion failure with no invitation/audit/pointer/session effects |
-| Admin/invitation positive controls | Actual bootstrap, active-target replacement, removed-target replacement and invitation reactivation produce exact revisions; former admin preserved; sessions retain existing replacement semantics |
-| Competing invitations/activation | Two independent clients, observed blocking; exactly one increment/consumption, loser leaves its invitation unconsumed and no extra audit |
-| Failure rollback | Forced late audit/pointer failure after activation leaves prior status/revision/token/session state unchanged |
-| Removal/reenrollment | Synthetic removal explicitly labeled until real service exists; unchanged revision on removal, next activation+1; old stamped queued/readiness evidence denies after active again in later producer proof |
-| Retention and role | Real run FK prevents membership deletion; non-owner effective privileges deny DELETE/TRUNCATE/ALTER/trigger bypass; valid lifecycle DML still succeeds |
-| Proof lineage | Exact old hashes plus reviewed new hashes; all8→13→15→18 tables and features actually present; repeat feature migrate adds no duplicate journal entries or revision changes; tampered/missing files fail before apply |
-| Fresh process | Child validates parent-owned service and activation lineage without applying migrations; existing restart readback still matches retained DTO/results |
-|005f interoperability | Re-run actual account/member ordering and session-drain controls on combined schema; no new opposing wait/deadlock or session invalidation regression |
+| Scenario                                            | Required binary observable                                                                                                                                                                                            |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy active and removed backfill                  | Existing synthetic rows become1, status/timestamps unchanged; legacy009 tuple remains NULL when that later migration exists                                                                                           |
+| New active/removed row and invalid initial revision | Default/explicit1 succeeds;0,2,MAX,NULL rejected by exact named check/guard                                                                                                                                           |
+| Lifecycle transitions and MAX                       | Removed1→active2 succeeds; active/removal preserve; reset/jump/missing increment denied; MAX activation exact exhaustion failure with no invitation/audit/pointer/session effects                                     |
+| Admin/invitation positive controls                  | Actual bootstrap, active-target replacement, removed-target replacement and invitation reactivation produce exact revisions; former admin preserved; sessions retain existing replacement semantics                   |
+| Competing invitations/activation                    | Two independent clients, observed blocking; exactly one increment/consumption, loser leaves its invitation unconsumed and no extra audit                                                                              |
+| Failure rollback                                    | Forced late audit/pointer failure after activation leaves prior status/revision/token/session state unchanged                                                                                                         |
+| Removal/reenrollment                                | Synthetic removal explicitly labeled until real service exists; unchanged revision on removal, next activation+1; old stamped queued/readiness evidence denies after active again in later producer proof             |
+| Retention and role                                  | Real run FK prevents membership deletion; non-owner effective privileges deny DELETE/TRUNCATE/ALTER/trigger bypass; valid lifecycle DML still succeeds                                                                |
+| Proof lineage                                       | Exact old hashes plus reviewed new hashes; all8→13→15→18 tables and features actually present; repeat feature migrate adds no duplicate journal entries or revision changes; tampered/missing files fail before apply |
+| Fresh process                                       | Child validates parent-owned service and activation lineage without applying migrations; existing restart readback still matches retained DTO/results                                                                 |
+| 005f interoperability                               | Re-run actual account/member ordering and session-drain controls on combined schema; no new opposing wait/deadlock or session invalidation regression                                                                 |
 
 No actual SQL, concurrency, deployed role or migration correctness is established by this design. Root acceptance, offline DDL review and explicit actual-proof authorization remain required.

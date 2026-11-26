@@ -20,10 +20,9 @@ No search, filter, sort, bulk change or usage; a removed skill could not be seen
 - **Export and import as a zip** are done in the browser with `fflate` (`skill-zip.ts`): `<name>/SKILL.md` plus the folder. Import reads the sizes from the zip index before unpacking, so a zip bomb stops early; paths that leave the folder, junk (`__MACOSX`, `.git`) and a missing or duplicate SKILL.md are handled. The executable bit is not read from a zip: a file that starts with `#!` is marked executable.
 - **Chief parity** (`chat/chief/skill-library.ts`): `read` (framed as untrusted data), `detach`, `restore`, `rename` (through `update`), and the 64 KB body limit of the library. Every change is still a card.
 
-## Not done
+## Limits
 
 - Usage is counted for Claude Code and the `/` picker only; a Hermes run puts every attached skill in its prompt, so "used" there would mean "attached". Other harnesses are not counted.
 - The update check compares against the repository's default branch (HEAD) only, not a branch or tag.
 - A zip cannot keep the executable bit, and the folder editor cannot edit files that are not text.
 - No bulk "update all".
-- Browsing, describing, previewing and searching ran against the real GitHub on 2026-11-15 (`scripts/e2e/skills-market.ts`, `docs/verification/e2e/skills-market.md`). Still not verified: the page in a real browser (happy-dom only), and installing and the update flow, which ran against a fake GitHub.

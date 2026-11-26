@@ -13,7 +13,7 @@ Bots opened visible rooms by themselves (for example `zetta#27: bump components`
 - **Prompt.** `openToolText` (`discussions/prompt.ts`) tells bots rooms are the user's, to keep the talk in the chat, and to open one only for something very specific and important.
 - Unchanged: the Chief's help and permission rooms, inbound chats (still only pre-approved bots, never a card), team rooms.
 
-## Not done
+## Limits
 
 - Rooms that bots already opened stay as they are (visible). The person can delete them, or the Chief can.
 - "Very specific and important" is a prompt rule plus the limits above; the server cannot judge importance.
@@ -24,4 +24,4 @@ Bots opened visible rooms by themselves (for example `zetta#27: bump components`
 
 ## Seeing the work in a room (2026-11-14)
 
-A running room turn showed only "Thinking · 17m" and "<bot> is working…". The turn streams like a chat's, but a page that does not follow the stream (more than 3 running turns, a read-only viewer, a reload, a dropped stream) reads the saved `running` row, and that row held no steps: only `content` was flushed, and a Claude Code bot streams steps, not prose, so `content` stayed empty. Now `runAnswer` (`chat/service.ts`, `saveLive`) saves `meta.timeline` and `meta.activity` on the running row at most every 3 s (the same write keeps `harnessSession` for crash resume), and for a room turn publishes `topics.conversation` so the page reads again at once (the poll slows to 15 s or more while the live channel is up). The web row reads `row.meta.activity` and `row.meta.timeline` (`work-timeline.tsx`, `message-row.tsx`). Not done: output of a step is still only offered on a live row; a room shows at most 3 live streams.
+A running room turn showed only "Thinking · 17m" and "<bot> is working…". The turn streams like a chat's, but a page that does not follow the stream (more than 3 running turns, a read-only viewer, a reload, a dropped stream) reads the saved `running` row, and that row held no steps: only `content` was flushed, and a Claude Code bot streams steps, not prose, so `content` stayed empty. Now `runAnswer` (`chat/service.ts`, `saveLive`) saves `meta.timeline` and `meta.activity` on the running row at most every 3 s (the same write keeps `harnessSession` for crash resume), and for a room turn publishes `topics.conversation` so the page reads again at once (the poll slows to 15 s or more while the live channel is up). The web row reads `row.meta.activity` and `row.meta.timeline` (`work-timeline.tsx`, `message-row.tsx`). Limits: output of a step is offered only on a live row; a room shows at most 3 live streams.

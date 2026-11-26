@@ -11,7 +11,7 @@ Status: confirmed intent (product interview, 2026-11-05). This is the first part
   - `container`: Docker or Podman, one long-lived container per language, network on.
   - `browser`: a sandboxed iframe, for HTML, JavaScript and TypeScript.
 - **Languages:** TypeScript and JavaScript (`bun`), Python (`python3`), shell (`bash`), HTML (browser only). A new language is one entry in a map of language to CLI.
-- **Access:** the owner is the creator, or the human a bot acts for. A playground is `private` by default. `team` lets every member read, run and fork it. Only the owner edits. Any active member may use the host runner, as members can already make bots that run Bash.
+- **Access:** the owner is the creator, or the human a bot acts for. A playground is `private` by default. `team` lets every member read, run and fork it. Only the owner edits. Any active member may use the host runner on a local install, as members can already make bots that run Bash; open to the network it needs the setting `hostRunner` saved On.
 - **Output:** stdout and stderr as text. Files that a script writes to `out/` are saved with the run. An `.html` file renders in a sandboxed iframe, images show inline, other files show as text or a download.
 - **Success:** a bot writes a Python report script, runs it, and posts a link. A human opens it, changes an input, runs it again, and sees both runs in the history with the files each run used.
 - **Constraint:** the host runner is not a sandbox. It runs as the server user, like bot Bash. A hosted multi-tenant mode needs a stronger runner later.

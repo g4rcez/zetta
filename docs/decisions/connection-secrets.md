@@ -1,7 +1,5 @@
 # Connection secret storage
 
-Status: accepted design selection under delegated architecture authority after [independent WATCH review](../verification/reviews/connection-secrets-review.md), with the request encoding clarified below. Research/ADR only. This does not complete [RFC-007](../../tasks/007-store-user-owned-connection-references.md) or approve a production deployment. Decision date: 2026-10-22. Earlier phrase-marker checks are housekeeping history, not semantic acceptance evidence; direct review and later behavioral proofs are required.
-
 Update 2026-10-31: credentials are now sealed under a random key for each user, which the deployment key wraps, and the browser seals credentials before sending them. This supersedes "One deployment-owned 32-byte random key ... encrypts" and "No ... multi-key vault" below for the key hierarchy only; the envelope, nonce ledger and receipts are unchanged. See [How Zetta protects credentials](../learning/credentials.md).
 
 ## Decision and observed baseline
@@ -10,7 +8,7 @@ Use application-side AES-256-GCM through `node:crypto` and the existing PostgreS
 
 Observed source anchors: [database factory](../../packages/db/src/index.ts), [database manifest](../../packages/db/package.json), [identity schema](../../packages/db/src/schema/identity.ts), [access checks](../../apps/server/src/modules/identity/access.ts), and [root manifest](../../package.json). These declare Drizzle 1.0.0-rc.4, pg ^8.23.0 and Bun 1.3.14 as package manager. No connection schema/service was found at these planned RFC-007 paths. The actual database server version and deployed crypto runtime remain implementation verification inputs.
 
-Follow [ownership](ownership.md), [execution isolation](execution-isolation.md), [task rules](../../tasks/README.md), [plan](../../tasks/plan.md), and [confirmed intent](../intent/zetta-v1.md). Admin status never bypasses owner access. Shared bot definitions carry requirements; actor-private bindings select the actor's connection references. Workspace placement grants no authority.
+Follow [ownership](ownership.md), [execution isolation](execution-isolation.md), and [confirmed intent](../intent/zetta-v1.md). Admin status never bypasses owner access. Shared bot definitions carry requirements; actor-private bindings select the actor's connection references. Workspace placement grants no authority.
 
 ## Two distinct credential kinds
 
@@ -84,8 +82,6 @@ At-rest encryption protects database-only disclosure. It does not protect agains
 No plaintext migration, host credential import, automatic online rekey or multi-key vault is included. Key ID and envelope version reserve explicit migration boundaries. Before changing keys, require a separate maintenance procedure: stop writes/dispatch, back up, authenticate/decrypt every retained envelope, re-encrypt with fresh nonces/new key ID, rebuild key check and nonce accounting, and handle old idempotency receipts explicitly (old request MACs cannot verify under the new key). Resume only after complete verification; never overwrite the sole key while any record depends on it. This remains a later operator task, not an implied working feature.
 
 ## Required proof and release gates
-
-The present artifact proves a design and source/link review only. No crypto implementation, database migration, account, provider, native profile or runtime launcher was exercised by this task.
 
 Implement a standalone disposable synthetic-key proof before accepting the crypto slice. Generate key and fake credentials in process memory; never print/write them. Capture named boolean results, runtime version and exit status only. Require round-trip for 1 and 16,384 bytes, reject zero/16,385 bytes, distinct nonces for repeat encryptions, nonce collision handling, wrong key/length/encoding, altered tag/ciphertext/nonce and each AAD field, truncated/unknown envelope, no plaintext released on authentication failure, and key-check mismatch. Restart proof must subsequently use two processes with an explicitly disposable key channel and encrypted disposable PostgreSQL records; an in-memory round-trip is not restart evidence.
 

@@ -30,7 +30,7 @@ More: up to 30 steps and 100 executed steps; `{{steps.<id>}}` is the answer of a
 - "Stop this run" (`POST /api/workflow-runs/:id/cancel`) closes the card with it. A routine whose workflow pauses counts as done.
 - `modules/runtime/*` (the durable-run tables) was **not** used: it models bot runs with leases and fencing and is not wired.
 
-## Not done
+## Limits
 
 - A wait for an event (a message, a webhook): time only.
 - Writes inside a loop body (they need an approval step, which a body cannot hold).

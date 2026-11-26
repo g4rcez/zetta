@@ -1,12 +1,10 @@
 # Launch journal store composition
 
-Status: revised design accepted after [coordinator independent review](../reviews/journal-store-008d3a-review.md),2026-10-22. Design only. Extends [persistence](launch-journal-persistence.md) without changing the accepted record or transitions. No daemon effects, systemd transport, queue, index, environment setting or automatic repair. Only this acceptance status was added after the reviewed freeze.
-
 ## Evidence and boundary
 
 Accepted exports exist: `createLaunchJournal`/`parseLaunchJournal` in launch-journal.ts; `transitionJournal` and JournalEvent in journal-transitions.ts; `encodeJournal`/`decodeJournal`/JOURNAL_BYTE_LIMIT in journal-codec.ts; `openJournalFiles` with read/commit/close in journal-files.ts; `parseJournalLockPolicy`/`beginJournalLock` in journal-lock.ts. These are actual names, not proposed adapters. File open/read currently requires exclusive receipt ownership; its private verifiedOpen/readBytes helpers are not exports.
 
-The coordinator's retained runtime-008d2-vm-run1 outer-status and stdout show all eight Linux descriptor scenarios passed, normal exit0, settled streams, empty owned process group, and final zero-child/no-orphan cleanup. The selected tuple is Linux arm64 UID1000, Bun1.3.14 revision0d9b296af33f2b851fcbf4df3e9ec89751734ba4 and Ubuntu flock2.39.3 SHA256b991f23fbc6a3928a86977d87a6c4fd14acc44cfe90ce7cb8f5dcab4d8a49fbf. This author read those receipts; it did not independently rerun the VM. Descriptor capability is accepted for that tuple. Directory-sync, store crashes, hardware durability and systemd lifecycle are separate gates. Source support for2.41.3 does not prove an untested binary tuple.
+The descriptor lock is accepted for this tuple: Linux arm64 UID1000, Bun1.3.14 revision0d9b296af33f2b851fcbf4df3e9ec89751734ba4 and Ubuntu flock2.39.3 SHA256b991f23fbc6a3928a86977d87a6c4fd14acc44cfe90ce7cb8f5dcab4d8a49fbf. Directory-sync, store crashes, hardware durability and systemd lifecycle are separate gates.
 
 ## Concrete trusted API
 
@@ -31,9 +29,15 @@ type JournalOwner = Readonly<{
 }>;
 type JournalStore = Readonly<{
   inventory(): Promise<readonly ReceiptSummary[]>;
-  createIntent(spec: unknown, admission: LaunchAdmission): Promise<Readonly<{
-    receiptId: string; disposition: "created" | "existing";
-  }>>;
+  createIntent(
+    spec: unknown,
+    admission: LaunchAdmission,
+  ): Promise<
+    Readonly<{
+      receiptId: string;
+      disposition: "created" | "existing";
+    }>
+  >;
   claimReceipt(receiptId: string): Promise<JournalOwner>;
   close(): Promise<void>;
   settled: Promise<void>;
@@ -91,11 +95,11 @@ Pre-mutation syntax/conflict errors leave owner usable if all path and lock chec
 
 Each child requires review before execution; max250 nonblank/noncomment lines per cohesive module, no compression to evade the limit. Evidence/task files are separate. No transport/daemon/DB changes.
 
-| Child | Exact source/test paths (under runtime unless noted) | Deliverable |
-| --- | --- | --- |
-|008d3b layout/snapshot | journal-layout.ts, journal-layout.test.ts, journal-files.ts, journal-files.test.ts | Protected bounded layout, descriptor-bound Linux statfs/mount profile verification, exclusive allocation/sync, separate read-only busy snapshot extraction; repeat accepted31 file/codec tests. No store or fake Linux lock. |
-|008d3c owner/store | journal-event.ts, journal-owner.ts, journal-store.ts, journal-owner.test.ts, journal-store.test.ts | NEW strict event parser plus actual lock/file composition, queues/deadlines/poison, inventory/idempotency. Reuse accepted record/operation parsers and transitions, not a nonexistent event parser. No generalized filesystem or repository framework. |
-|008d3d Linux proof | scripts/fixtures/journal-writer-child.ts, scripts/fixtures/journal-store-proof.ts, journal-store.integration.test.ts | Fixed finite subprocess protocol and C0..C8/F/P/R scenarios; source preparation first, exact VM launcher/cleanup review separately before execution. |
+| Child                  | Exact source/test paths (under runtime unless noted)                                                                 | Deliverable                                                                                                                                                                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 008d3b layout/snapshot | journal-layout.ts, journal-layout.test.ts, journal-files.ts, journal-files.test.ts                                   | Protected bounded layout, descriptor-bound Linux statfs/mount profile verification, exclusive allocation/sync, separate read-only busy snapshot extraction; repeat accepted31 file/codec tests. No store or fake Linux lock.                           |
+| 008d3c owner/store     | journal-event.ts, journal-owner.ts, journal-store.ts, journal-owner.test.ts, journal-store.test.ts                   | NEW strict event parser plus actual lock/file composition, queues/deadlines/poison, inventory/idempotency. Reuse accepted record/operation parsers and transitions, not a nonexistent event parser. No generalized filesystem or repository framework. |
+| 008d3d Linux proof     | scripts/fixtures/journal-writer-child.ts, scripts/fixtures/journal-store-proof.ts, journal-store.integration.test.ts | Fixed finite subprocess protocol and C0..C8/F/P/R scenarios; source preparation first, exact VM launcher/cleanup review separately before execution.                                                                                                   |
 
 Factory and owner tests can test closed parsing/queue state with narrow trusted I/O faults. Injected success must never be called Linux lock evidence. Actual accepted lock primitive remains mandatory for full store integration. If boundaries cannot fit honestly, request a concrete file-scope amendment before adding files.
 
@@ -105,21 +109,21 @@ Use a newly approved fixed UUID suite directory on the same pinned VM/ext4 profi
 
 A child sends bounded structured ready/cut messages only after the named actual syscall boundary. Parent records receipt and kills exact child, awaits termination and lock release before fresh-process inventory/claim. Trusted cut hooks pause the child at real calls; mocked syscall failures are labeled injected. Parent records synthetic effect messages in its bounded evidence channel: C0..C7 zero; C8 exactly one before kill. Recovery fixture contains no submission branch, so both message count and source inspection show no replay. This is synthetic persistence proof, not Docker behavior or power-loss simulation.
 
-| Cuts/scenarios | Required observable |
-| --- | --- |
-|C0 before mkdir / before replacement stage | No new namespace / old canonical bytes; zero effects. |
-|C1 mkdir before root sync | Retained partial allocation, admission denied; replacement counterpart is staging exclusive-create before write. |
-|C2 root sync before initial staging | Durable permanent lock with missing record blocks admission. Replacement old record remains valid before staging. |
-|C3 partial staging write | record.next survives; idle claim/new admission denied, never promoted. |
-|C4 staging fsync, before/after close before rename | Old/missing record plus staging; recovery-required, zero effects. |
-|C5 rename before receipt-dir sync | Complete old/new record or retained invalid condition; no success assertion about power loss; fresh load inert. |
-|C6 directory sync before readback | Complete canonical new record, no returned success/effect; replay createIntent discovers same ID. |
-|C7 readback before reply | Same inert receipt found after lost response; no duplicate or effect. |
-|C8 commit reply, one synthetic effect, before fact commit/reply | Pending or fact record accepted inertly; effect count remains1 across restart, exact pending unknown/cancel committed before reconciliation. |
-|F1/F2 | Real Linux sync/rename/readback and fresh reopen; injected short/zero write, ENOSPC, file-sync/close/rename/dir-sync/readback errors including success-then-reject: fixed unknown, poison, zero effects. |
-|F3 | Deferred I/O beyond deadline: contender remains busy until settlement/close, queued mutation rejected, late success never returned. Actual disk EIO not claimed. |
-|P1/P2 | Protected-path/link/FIFO/mode/foreign-entry/oversize/canonical negatives preserve unrelated bytes;1024 permits existing owner progress but denies new ID;1025 scan fails; call33 busy. |
-|R1/R2 | Same attempt replay vs changed spec, duplicate corruption, historical expiry; busy runner stage does not block stable immutable snapshot; dead staging does block; control process death leaves independent owner progress; cancel gap then late claimant reads cancellation. |
+| Cuts/scenarios                                                  | Required observable                                                                                                                                                                                                                                                           |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C0 before mkdir / before replacement stage                      | No new namespace / old canonical bytes; zero effects.                                                                                                                                                                                                                         |
+| C1 mkdir before root sync                                       | Retained partial allocation, admission denied; replacement counterpart is staging exclusive-create before write.                                                                                                                                                              |
+| C2 root sync before initial staging                             | Durable permanent lock with missing record blocks admission. Replacement old record remains valid before staging.                                                                                                                                                             |
+| C3 partial staging write                                        | record.next survives; idle claim/new admission denied, never promoted.                                                                                                                                                                                                        |
+| C4 staging fsync, before/after close before rename              | Old/missing record plus staging; recovery-required, zero effects.                                                                                                                                                                                                             |
+| C5 rename before receipt-dir sync                               | Complete old/new record or retained invalid condition; no success assertion about power loss; fresh load inert.                                                                                                                                                               |
+| C6 directory sync before readback                               | Complete canonical new record, no returned success/effect; replay createIntent discovers same ID.                                                                                                                                                                             |
+| C7 readback before reply                                        | Same inert receipt found after lost response; no duplicate or effect.                                                                                                                                                                                                         |
+| C8 commit reply, one synthetic effect, before fact commit/reply | Pending or fact record accepted inertly; effect count remains1 across restart, exact pending unknown/cancel committed before reconciliation.                                                                                                                                  |
+| F1/F2                                                           | Real Linux sync/rename/readback and fresh reopen; injected short/zero write, ENOSPC, file-sync/close/rename/dir-sync/readback errors including success-then-reject: fixed unknown, poison, zero effects.                                                                      |
+| F3                                                              | Deferred I/O beyond deadline: contender remains busy until settlement/close, queued mutation rejected, late success never returned. Actual disk EIO not claimed.                                                                                                              |
+| P1/P2                                                           | Protected-path/link/FIFO/mode/foreign-entry/oversize/canonical negatives preserve unrelated bytes;1024 permits existing owner progress but denies new ID;1025 scan fails; call33 busy.                                                                                        |
+| R1/R2                                                           | Same attempt replay vs changed spec, duplicate corruption, historical expiry; busy runner stage does not block stable immutable snapshot; dead staging does block; control process death leaves independent owner progress; cancel gap then late claimant reads cancellation. |
 
 C1/C2 apply specifically to insertion layout; replacement counterparts do not pretend to repeat mkdir/root publication. Record observed surviving names/bytes after every cut, not assumed outcomes. Linux directory fsync syscall success and SIGKILL survival establish only the tested surface; storage stack flush honesty, power loss, systemd children/ExecStopPost and authenticated commands remain independent deployment/integration gates.
 

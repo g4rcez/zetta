@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { vouched } from "./authres";
 import {
   allowedList,
   configureMail,
@@ -7,7 +8,6 @@ import {
   resetMailLimits,
   senderAllowed,
   toEvent,
-  vouched,
   type Fetched,
   type Mailer,
   type Outgoing,
@@ -22,7 +22,7 @@ const mime = (headers: Record<string, string>, body: string) =>
       .join("\r\n")}\r\n\r\n${body}`,
   );
 const PASS =
-  "mx.example.net; dkim=pass header.i=@example.com; spf=pass smtp.mailfrom=ana@example.com";
+  "mx.example.net; dkim=pass header.i=@example.com; spf=pass smtp.mailfrom=ana@example.com; dmarc=pass header.from=example.com";
 const mail = (
   uid: number,
   over: Record<string, string> = {},
@@ -43,7 +43,12 @@ const mail = (
     body,
   ),
 });
-const opts = { allowed: ["ana@example.com"], strict: true, self: "bot@example.org" };
+const opts = {
+  allowed: ["ana@example.com"],
+  server: "mx.example.net",
+  strict: true,
+  self: "bot@example.org",
+};
 
 describe("who may write", () => {
   test("a list holds addresses and domains, in any case, and matching is exact for an address and by domain for a domain", () => {
@@ -61,13 +66,59 @@ describe("who may write", () => {
     expect(senderAllowed("x@sub.example.org", list)).toBe(false);
     expect(senderAllowed("ana@example.com", [])).toBe(false);
   });
-  test("the receiving server vouches for a sender only with dkim=pass or spf=pass in its header", () => {
-    expect(vouched(PASS)).toBe(true);
-    expect(vouched("mx; spf=pass smtp.mailfrom=a@b.c")).toBe(true);
-    expect(vouched("mx; dkim=fail; spf=softfail")).toBe(false);
-    expect(vouched("mx; dkim=none")).toBe(false);
-    expect(vouched(undefined)).toBe(false);
-    expect(vouched("this says nothing about dkim=passed-not")).toBe(false);
+});
+
+describe("the receiving server vouches for a sender", () => {
+  const says = (...headers: string[]) => vouched(headers, "mx.example.net", "example.com");
+
+  test("with its own verdict: DMARC for the From domain, or a DKIM signature of that domain", () => {
+    expect(says(PASS)).toBe(true);
+    expect(says("MX.Example.Net 1; dmarc=pass (p=NONE) header.from=Example.com")).toBe(true);
+    expect(says("mx.example.net; dkim=pass header.d=example.com header.s=a")).toBe(true);
+    expect(
+      says(
+        "mx.example.net;\r\n\tdkim=fail header.d=other.test;\r\n\tdkim=pass header.i=@example.com",
+      ),
+    ).toBe(true);
+  });
+
+  test("never for another domain, another method or a failure", () => {
+    expect(says("mx.example.net; spf=pass smtp.mailfrom=ana@example.com")).toBe(false);
+    expect(says("mx.example.net; dkim=pass header.d=attacker.test")).toBe(false);
+    expect(says("mx.example.net; dkim=pass header.i=@sub.attacker.test")).toBe(false);
+    expect(says("mx.example.net; dmarc=pass header.from=attacker.test")).toBe(false);
+    expect(says("mx.example.net; dmarc=pass")).toBe(false);
+    expect(
+      says("mx.example.net; dkim=fail header.d=example.com; dmarc=fail header.from=example.com"),
+    ).toBe(false);
+    expect(says("mx.example.net; none")).toBe(false);
+    expect(says()).toBe(false);
+  });
+
+  test("only that server's header counts, and the topmost one of its name", () => {
+    const forged = "mx.example.net; dmarc=pass header.from=example.com";
+    expect(says("x; dkim=pass header.d=example.com; dmarc=pass header.from=example.com")).toBe(
+      false,
+    );
+    expect(says("mx.example.net; dmarc=fail header.from=example.com", forged)).toBe(false);
+    expect(says("filter.example.org; spf=pass", forged)).toBe(true);
+  });
+
+  test("a verdict written inside a comment or a quoted address is not a verdict", () => {
+    expect(
+      says(
+        'mx.example.net; spf=pass smtp.mailfrom="a; dmarc=pass header.from=example.com"@attacker.test; dmarc=fail header.from=example.com',
+      ),
+    ).toBe(false);
+    expect(says("mx.example.net; spf=fail (; dmarc=pass (nested) header.from=example.com)")).toBe(
+      false,
+    );
+    expect(
+      says(
+        'mx.example.net; spf=pass smtp.mailfrom="unterminated; dmarc=pass header.from=example.com',
+      ),
+    ).toBe(false);
+    expect(says("mx.example.net (unterminated; dmarc=pass header.from=example.com")).toBe(false);
   });
 });
 
@@ -136,6 +187,25 @@ describe("one message becomes an outside person's message", () => {
       await toEvent(mail(13, { "Authentication-Results": "mx; dkim=fail; spf=fail" }), "42", opts),
     ).toBeUndefined();
     expect(await toEvent(mail(14, { "Authentication-Results": "" }), "42", opts)).toBeUndefined();
+    // A header the sender wrote, below the real one or alone under another name.
+    expect(
+      await toEvent(
+        mail(22, {
+          "Authentication-Results": `mx.example.net; dmarc=fail header.from=example.com\r\nAuthentication-Results: ${PASS}`,
+        }),
+        "42",
+        opts,
+      ),
+    ).toBeUndefined();
+    expect(
+      await toEvent(mail(23, { "Authentication-Results": "x; dkim=pass" }), "42", opts),
+    ).toBeUndefined();
+    // Two From lines: which one the server checked is not known.
+    expect(
+      await toEvent(mail(24, { From: "ana@example.com\r\nFrom: eve@attacker.test" }), "42", opts),
+    ).toBeUndefined();
+    // Without the server's name nothing can be checked.
+    expect(await toEvent(mail(25), "42", { ...opts, server: undefined })).toBeUndefined();
     expect(
       await toEvent(mail(15, { From: "bot@example.org" }), "42", {
         ...opts,
@@ -202,6 +272,7 @@ const ctx = (over: Record<string, string> = {}): PluginContext => ({
     user: "bot@example.org",
     password: "app-password",
     allowedSenders: "ana@example.com",
+    receivingServer: "mx.example.net",
     ...over,
   },
   setConfig: () => {
@@ -256,6 +327,29 @@ describe("reading the mailbox", () => {
     expect((await poll(ctx(), page.cursor, 2)).events.map((e) => e.key)).toEqual([
       "<m3@example.com>",
     ]);
+  });
+
+  test("without the receiving server's name nothing is delivered, and the person is told what to do", async () => {
+    box.uidNext = 6;
+    box.mails = [mail(5)];
+    const r = await poll(ctx({ receivingServer: "" }), { v: 1, uidValidity: "42", lastUid: 0 });
+    expect(r.events).toEqual([]);
+    expect(r.warning).toContain("Receiving server name");
+    // With the check off the name is not needed.
+    const lax = await poll(ctx({ receivingServer: "", requireAuth: "no" }), {
+      v: 1,
+      uidValidity: "42",
+      lastUid: 0,
+    });
+    expect(lax.events).toHaveLength(1);
+  });
+
+  test("mail from an allowed sender that the server did not vouch for is counted in a warning", async () => {
+    box.uidNext = 7;
+    box.mails = [mail(5, { "Authentication-Results": "x; dkim=pass" }), mail(6)];
+    const r = await poll(ctx(), { v: 1, uidValidity: "42", lastUid: 0 });
+    expect(r.events).toHaveLength(1);
+    expect(r.warning).toContain("1 message");
   });
 
   test("a server that cannot be reached or refuses the password is told in words, with no server text", async () => {

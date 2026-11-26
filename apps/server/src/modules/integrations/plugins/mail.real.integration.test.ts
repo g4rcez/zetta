@@ -35,6 +35,7 @@ const BOT_ADDR = addressOf(BOT),
   EVE_ADDR = addressOf(EVE);
 const PASS =
   "mx.example.invalid; dkim=pass header.i=@example.invalid; spf=pass smtp.mailfrom=ana@example.invalid";
+const SERVER = "mx.example.invalid";
 
 const describeOrSkip = GREENMAIL_ENABLED ? describe : describe.skip;
 
@@ -50,6 +51,7 @@ describeOrSkip("the mail plugin against a real GreenMail server", () => {
       user: loginOf(BOT),
       password: BOT.password,
       allowedSenders: ANA_ADDR,
+      receivingServer: SERVER,
       allowSend: "yes",
       ...over,
     },

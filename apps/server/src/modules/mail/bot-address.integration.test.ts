@@ -410,7 +410,7 @@ suite("bot e-mail addresses against postgres", () => {
     });
     const send = (o: {
       from?: string;
-      auth?: { spf?: string; dkim?: string };
+      auth?: { spf?: string; dkim?: string; dmarc?: string };
       headers?: Record<string, string>;
       subject?: string;
       to?: string;
@@ -424,7 +424,7 @@ suite("bot e-mail addresses against postgres", () => {
         ...(o.headers ? { headers: o.headers } : {}),
       });
 
-    test("an allowed sender with dkim=pass starts a turn, through the bot's own route", async () => {
+    test("an allowed sender with DMARC pass starts a turn, through the bot's own route", async () => {
       await send({});
       const out = await poller().tick();
       expect(out).toMatchObject({ status: "ran", stats: { stored: 1, turns: 1 } });
@@ -441,10 +441,17 @@ suite("bot e-mail addresses against postgres", () => {
       expect(turns[0]!.events[0]!.text).toBe("Subject: Question\n\nCan you help?");
     });
 
-    test("spf=pass is enough; a domain on the list works", async () => {
-      await send({ from: "bob@partner.example.invalid", auth: { dkim: "fail", spf: "pass" } });
+    test("a domain on the list works", async () => {
+      await send({ from: "bob@partner.example.invalid", auth: { dkim: "fail", dmarc: "pass" } });
       await poller().tick();
       expect(turns).toHaveLength(1);
+    });
+
+    test("SPF of the sender's own domain does not vouch for the From address", async () => {
+      await send({ auth: { spf: "pass", dkim: "gray", dmarc: "fail" } });
+      await poller().tick();
+      expect(turns).toHaveLength(0);
+      expect(await countMsgs(box.id)).toBe(1);
     });
 
     test("an unlisted sender is stored but starts none", async () => {
@@ -455,9 +462,12 @@ suite("bot e-mail addresses against postgres", () => {
       expect(await countMsgs(box.id)).toBe(1);
     });
 
-    test("failed DKIM and SPF start none", async () => {
-      await send({ auth: { dkim: "fail", spf: "fail" } });
-      await send({ auth: { dkim: "unknown", spf: "unknown" }, subject: "Unknown" });
+    test("failed or unknown authentication starts none", async () => {
+      await send({ auth: { dkim: "fail", spf: "fail", dmarc: "fail" } });
+      await send({
+        auth: { dkim: "unknown", spf: "unknown", dmarc: "unknown" },
+        subject: "Unknown",
+      });
       await poller().tick();
       expect(turns).toHaveLength(0);
       expect(await countMsgs(box.id)).toBe(2);

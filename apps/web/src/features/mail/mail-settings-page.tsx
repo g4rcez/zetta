@@ -208,7 +208,7 @@ function ConnectionForm({ mailbox }: { mailbox: Mailbox }) {
 
 /**
  * Who may write to a bot's own address: the only kind of mailbox that has this field. Mail from an address on the list that the provider
- * vouches for (DKIM or SPF) starts a turn of the bot, which can answer that person only. Anyone else's mail is kept and the bot ignores it.
+ * vouches for (DMARC passes) starts a turn of the bot, which can answer that person only. Anyone else's mail is kept and the bot ignores it.
  */
 function SendersForm({ mailbox }: { mailbox: Mailbox }) {
   const qc = useQueryClient();

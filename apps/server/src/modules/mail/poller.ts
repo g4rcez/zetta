@@ -94,9 +94,12 @@ export function isAutomatic(block: string): boolean {
   );
 }
 
-/** The provider vouches for the sender: DKIM or SPF passed (the same rule as the e-mail plugin). */
+/**
+ * The provider vouches for the From address: DMARC passed. SPF speaks of the envelope's address, and the provider does not say which
+ * domain a DKIM signature that passed is of, so neither alone ties a message to the sender it shows.
+ */
 export const vouchedBy = (a: Partial<Authentication> | Record<string, string>) =>
-  a.dkim === "pass" || a.spf === "pass";
+  a.dmarc === "pass";
 
 export type TurnFacts = {
   mailbox: Pick<Mailbox, "address" | "state" | "botId" | "allowedSenders">;

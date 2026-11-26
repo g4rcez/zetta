@@ -18,9 +18,9 @@ const facts = (o: Partial<Parameters<typeof startsTurn>[0]> = {}) => ({
 });
 
 describe("startsTurn", () => {
-  test("an allowed sender the provider vouches for starts a turn (dkim or spf)", () => {
+  test("an allowed sender the provider vouches for starts a turn (DMARC pass)", () => {
     expect(startsTurn(facts())).toBe(true);
-    expect(startsTurn(facts({ authentication: { spf: "pass", dkim: "fail" } }))).toBe(true);
+    expect(startsTurn(facts({ authentication: { dmarc: "pass" } }))).toBe(true);
     expect(startsTurn(facts({ from: "Bob@Partner.example.invalid" }))).toBe(true);
   });
   test("failed or unknown authentication starts none", () => {
@@ -29,8 +29,11 @@ describe("startsTurn", () => {
     ).toBe(false);
     expect(startsTurn(facts({ authentication: { spf: "unknown", dkim: "unknown" } }))).toBe(false);
     expect(startsTurn(facts({ authentication: {} }))).toBe(false);
-    // DMARC alone does not vouch: the rule is the e-mail plugin's (dkim=pass or spf=pass).
-    expect(startsTurn(facts({ authentication: { dmarc: "pass" } }))).toBe(false);
+    // SPF and DKIM alone say nothing about the From address: the provider does not say which domain passed.
+    expect(startsTurn(facts({ authentication: { spf: "pass", dkim: "fail" } }))).toBe(false);
+    expect(
+      startsTurn(facts({ authentication: { spf: "pass", dkim: "pass", dmarc: "gray" } })),
+    ).toBe(false);
   });
   test("an unlisted sender starts none, and an empty list lets nobody in", () => {
     expect(startsTurn(facts({ from: "mallory@evil.example.invalid" }))).toBe(false);
@@ -88,9 +91,9 @@ describe("helpers", () => {
     expect(headerOf(b, "x")).toBe("1");
   });
   test("vouchedBy", () => {
-    expect(vouchedBy({ dkim: "pass" })).toBe(true);
-    expect(vouchedBy({ spf: "pass" })).toBe(true);
-    expect(vouchedBy({ spf: "fail", dkim: "gray" })).toBe(false);
+    expect(vouchedBy({ dmarc: "pass" })).toBe(true);
+    expect(vouchedBy({ spf: "pass", dkim: "pass" })).toBe(false);
+    expect(vouchedBy({ spf: "pass", dkim: "pass", dmarc: "fail" })).toBe(false);
   });
   test("newWords drops the quoted thread", () => {
     expect(newWords("Yes, 5pm.\n\nOn Mon, Nov 2, 2026 Ana wrote:\n> old\n")).toBe("Yes, 5pm.");

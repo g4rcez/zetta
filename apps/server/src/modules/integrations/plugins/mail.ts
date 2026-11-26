@@ -10,6 +10,7 @@ import {
   smtpOptions,
   type MailServer,
 } from "../../mail/imap-connect";
+import { vouched } from "./authres";
 import {
   PluginError,
   registerPlugin,
@@ -31,9 +32,10 @@ import { clean, requiredText } from "./untrusted";
  * the first poll only remembers where the mailbox is (no backfill), and a mailbox that was rebuilt starts again from now.
  *
  * Trust: an e-mail's From line is easy to forge, so a message is delivered only when (1) the sender is on the person's list of allowed
- * addresses or domains, and (2) the receiving server vouches for it: its Authentication-Results header says dkim=pass or spf=pass
- * (switch it off with "Check the sender" = no, for a private server that does not add the header). Text is untrusted data like any
- * outside message; attachments are never opened (their names are listed).
+ * addresses or domains, and (2) the receiving server vouches for it: the Authentication-Results header it adds, found by the server's
+ * name, says DMARC passed for the From domain or a DKIM signature of that domain did (`authres.ts`). "Check the sender" = no switches
+ * this off, for a private server. Text is untrusted data like any outside message; attachments are never opened (their names are
+ * listed).
  *
  * Replying: off until the person allows it, only to the address of the chat it answers (the reply tool takes the chat, not an address),
  * rate limited, plain text. Hosts go through the same address policy as MCP servers and WhatsApp (no private networks unless the
@@ -200,8 +202,6 @@ export const senderAllowed = (address: string, list: string[]) => {
       : (x.startsWith("@") ? x.slice(1) : x) === domain,
   );
 };
-/** Whether the receiving server vouches for the sender: DKIM or SPF passed in the header it adds. */
-export const vouched = (header: string | undefined) => /\b(dkim|spf)=pass\b/i.test(header ?? "");
 
 const textOf = (parsed: { text?: string | false; html?: string | false }) => {
   const plain = typeof parsed.text === "string" ? parsed.text : "";
@@ -230,7 +230,15 @@ const textOf = (parsed: { text?: string | false; html?: string | false }) => {
 export async function toEvent(
   mail: RawMail,
   uidValidity: string,
-  o: { allowed: string[]; strict: boolean; self: string },
+  o: {
+    allowed: string[];
+    /** The name the receiving server writes in its Authentication-Results header. */
+    server?: string;
+    strict: boolean;
+    self: string;
+    /** Called for a message of an allowed sender that the server did not vouch for. */
+    unvouched?: () => void;
+  },
 ): Promise<InboundEvent | undefined> {
   let parsed: Awaited<ReturnType<typeof simpleParser>>;
   try {
@@ -243,16 +251,23 @@ export async function toEvent(
   } catch {
     return undefined;
   }
+  const headers = (key: string) =>
+    parsed.headerLines
+      .filter((h) => h.key === key)
+      .map((h) => h.line.slice(h.line.indexOf(":") + 1));
+  // With two From lines or two addresses, which one the server checked is not known.
+  if (headers("from").length > 1 || (parsed.from?.value?.length ?? 0) > 1) return undefined;
   const from = parsed.from?.value?.[0];
   const address = (from?.address ?? "").trim().toLowerCase();
   if (!address || !/^[^\s<>@]+@[^\s<>@]+$/.test(address) || address === o.self) return undefined;
   if (!senderAllowed(address, o.allowed)) return undefined;
-  const auth = parsed.headers.get("authentication-results");
   if (
     o.strict &&
-    !vouched(Array.isArray(auth) ? auth.join(" ") : typeof auth === "string" ? auth : undefined)
-  )
+    !(o.server && vouched(headers("authentication-results"), o.server, address.split("@")[1] ?? ""))
+  ) {
+    o.unvouched?.();
     return undefined;
+  }
   // Automatic mail (a bounce, a list, an out-of-office) is never answered, so two machines cannot talk to each other.
   const auto = String(parsed.headers.get("auto-submitted") ?? "");
   const precedence = String(parsed.headers.get("precedence") ?? "");
@@ -282,6 +297,23 @@ export async function toEvent(
     group: false,
   };
 }
+
+/** What the person reads about mail that was not delivered. */
+function warningOf(o: { allowed: number; named: boolean; unvouched: number }) {
+  if (!o.allowed)
+    return {
+      warning:
+        "No allowed senders are set, so no message is delivered. Add the addresses or domains that may write to the bot.",
+    };
+  if (!o.named) return { warning: NO_SERVER };
+  if (!o.unvouched) return {};
+  return {
+    warning: `${o.unvouched} message${o.unvouched === 1 ? " from an allowed sender was" : "s from allowed senders were"} not delivered: the receiving server did not vouch for the sender. Check the Receiving server name.`,
+  };
+}
+const NO_SERVER =
+  "No message is delivered until the Receiving server name is set in the e-mail plugin: only that server may vouch for a sender.";
+const SERVER_NAME = "[A-Za-z0-9](?:[A-Za-z0-9._-]{0,250}[A-Za-z0-9])?";
 
 const inbound: PluginInbound = {
   label: "E-mail",
@@ -319,6 +351,8 @@ const inbound: PluginInbound = {
     let cutShort = false;
     const limit = Math.min(FETCH_PER_POLL, o.maxEvents * 2);
     const strict = (ctx.config.requireAuth ?? "yes") !== "no";
+    const server = ctx.config.receivingServer?.trim() || undefined;
+    let unvouched = 0;
     for (const m of got.mails) {
       // Enough for this poll: the rest stays unread (the cursor stops before it), and the next poll takes it.
       if (events.length >= o.maxEvents) {
@@ -328,7 +362,13 @@ const inbound: PluginInbound = {
       last = m.uid;
       // With no list of allowed senders nothing is delivered: an open inbox is an open door.
       const e = allowed.length
-        ? await toEvent(m, got.uidValidity, { allowed, strict, self: cfg.user.toLowerCase() })
+        ? await toEvent(m, got.uidValidity, {
+            allowed,
+            server,
+            strict,
+            self: cfg.user.toLowerCase(),
+            unvouched: () => unvouched++,
+          })
         : undefined;
       if (e) events.push(e);
     }
@@ -340,12 +380,7 @@ const inbound: PluginInbound = {
         uidValidity: got.uidValidity,
         lastUid: cutShort || got.mails.length >= limit ? last : Math.max(last, got.uidNext - 1),
       } satisfies Cursor,
-      ...(allowed.length
-        ? {}
-        : {
-            warning:
-              "No allowed senders are set, so no message is delivered. Add the addresses or domains that may write to the bot.",
-          }),
+      ...warningOf({ allowed: allowed.length, named: !strict || Boolean(server), unvouched }),
     };
   },
   reply: {
@@ -376,7 +411,7 @@ const def: PluginDef = {
   description:
     "Give your bot an inbox: people you allow write to its address, and the bot answers by e-mail. Works with any IMAP and SMTP server.",
   notes:
-    "Use a mailbox just for the bot. Gmail and Outlook need an app password. Only mail from the addresses or domains you list is read, and only when the receiving server vouches for the sender (DKIM or SPF). Replies are OFF until you allow them, and go only to the address that wrote. Attachments are never opened.",
+    "Use a mailbox just for the bot. Gmail and Outlook need an app password. Only mail from the addresses or domains you list is read, and only when your mail server vouches for the sender (DMARC, or a DKIM signature of the sender's domain). Replies are OFF until you allow them, and go only to the address that wrote. Attachments are never opened.",
   fields: [
     {
       key: "imapHost",
@@ -430,7 +465,15 @@ const def: PluginDef = {
       label: "Check the sender (yes/no)",
       optional: true,
       placeholder: "yes",
-      help: "Deliver a message only when the mail server says its sender checks out (DKIM or SPF). Turn off only for a private server that does not add that header.",
+      help: "Deliver a message only when your mail server says its sender checks out (DMARC, or a DKIM signature of the sender's domain). Turn off only for a private server where nobody can fake a sender: with it off, anyone can write as an allowed address.",
+    },
+    {
+      key: "receivingServer",
+      label: "Receiving server name",
+      optional: true,
+      placeholder: "mx.example.com",
+      pattern: { source: SERVER_NAME, format: "is a server name such as mx.example.com" },
+      help: "The name your mail server writes first in the Authentication-Results line of the mail it receives (open the source of a message you received; Gmail writes mx.google.com). Needed while the sender is checked: only that server's verdict counts.",
     },
   ],
   async install(ctx) {
@@ -449,13 +492,16 @@ const def: PluginDef = {
       const cfg = cfgOf(ctx);
       await assertHosts(cfg);
       await mailer.check(cfg);
+      const checkSender = (ctx.config.requireAuth ?? "yes") !== "no";
       return {
         state: "connected",
+        ...(checkSender && !ctx.config.receivingServer ? { detail: NO_SERVER } : {}),
         info: {
           address: cfg.user,
           allowedSenders: allowedList(ctx.config.allowedSenders),
           allowSend: ctx.config.allowSend === "yes",
-          checkSender: (ctx.config.requireAuth ?? "yes") !== "no",
+          checkSender,
+          receivingServer: ctx.config.receivingServer ?? "",
         },
       };
     } catch (e) {
@@ -489,6 +535,16 @@ const def: PluginDef = {
           );
         if (list.length) next.allowedSenders = list.join(", ");
         else delete next.allowedSenders;
+      }
+      if (typeof s.receivingServer === "string") {
+        const name = s.receivingServer.trim().toLowerCase();
+        if (name && !new RegExp(`^${SERVER_NAME}$`).test(name))
+          throw new PluginError(
+            "INVALID_FIELD",
+            "Receiving server name is a server name such as mx.example.com.",
+          );
+        if (name) next.receivingServer = name;
+        else delete next.receivingServer;
       }
       await ctx.setConfig(next);
       return { message: "Settings saved." };

@@ -16,8 +16,9 @@ export function readBy(names: readonly string[]): string {
 }
 
 /**
- * Under a person's message: a check and the faces of the bots that picked it up (a bot has picked a message up when its reply or its
- * turn started). Nothing shows until a bot has, so a message nobody read yet carries no mark. Hover, focus or tap names them.
+ * Beside a person's name (after the text on a follow-up message, which has no name line): a check and the faces of the bots that picked
+ * the message up (a bot has picked it up when its reply or its turn started). Nothing shows until a bot has, so a message nobody read yet
+ * carries no mark. Hover, focus or tap names them.
  */
 export function SeenMark({ botIds }: { botIds: readonly string[] }) {
   const bots = useContext(BotsContext);

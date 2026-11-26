@@ -6,7 +6,12 @@ export type FailureKind = "transient" | "quota" | "needs_person";
 
 export function failureKind(code: string | null | undefined): FailureKind {
   if (code === "quota") return "quota";
-  if (code === "auth_required" || code === "not_installed" || code === "owner_inactive")
+  if (
+    code === "auth_required" ||
+    code === "not_installed" ||
+    code === "no_safe_mode" ||
+    code === "owner_inactive"
+  )
     return "needs_person";
   return "transient";
 }

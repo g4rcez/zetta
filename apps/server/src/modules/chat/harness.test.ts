@@ -49,6 +49,49 @@ describe.skipIf(process.platform === "win32")("cli harness", () => {
       expect(argv).toContain("m1");
     }
   });
+  test("Pi gets no tools, extensions or MCP servers when code is off, and a prompt stays text", () => {
+    const off = harnessCommands.pi("@/etc/passwd", "m1");
+    for (const flag of [
+      "--no-tools",
+      "--no-extensions",
+      "--no-mcp",
+      "--no-skills",
+      "--no-context-files",
+      "--no-approve",
+    ])
+      expect(off).toContain(flag);
+    // `@word` is a file to these two, and `-word` an option.
+    expect(off.at(-1)).toBe(" @/etc/passwd");
+    expect(harnessCommands.pi("-e x", null).at(-1)).toBe(" -e x");
+    expect(harnessCommands.omp("@/etc/passwd", null).at(-1)).toBe(" @/etc/passwd");
+    expect(harnessCommands.pi("hi", null, "git")).toEqual(["pi", "-p", "hi"]);
+    const seen = harnessCommands.pi("look", null, undefined, { images: ["./.zetta-images/1.png"] });
+    expect(seen).toContain("@./.zetta-images/1.png");
+    expect(seen.at(-1)).toBe("look");
+  });
+  test("an engine whose tools cannot be switched off does not run on the host without code", async () => {
+    const fake = await script("echo ran");
+    for (const harness of ["omp", "deepseek"] as const)
+      await expect(
+        runCli({ harness, prompt: "hi", model: null, resolve: () => fake }),
+      ).rejects.toMatchObject({ code: "no_safe_mode" });
+    // With code access its bot may run commands here anyway.
+    process.env.ZETTA_CODE_ROOT = await mkdtemp(join(tmpdir(), "zetta-code-"));
+    try {
+      expect(
+        await runCli({
+          harness: "omp",
+          prompt: "hi",
+          model: null,
+          userId: "u-safe",
+          code: { name: "dev", email: "dev@example.invalid", mode: "fixed" },
+          resolve: () => fake,
+        }),
+      ).toBe("ran");
+    } finally {
+      delete process.env.ZETTA_CODE_ROOT;
+    }
+  });
   test("deepseek runs dsh headless with the prompt as the last argument", () => {
     expect(harnessCommands.deepseek("hello; rm -rf /", null)).toEqual([
       "dsh",
@@ -58,7 +101,7 @@ describe.skipIf(process.platform === "win32")("cli harness", () => {
   });
   test("returns stdout, runs in an empty cwd with a minimal env", async () => {
     const fake = await script(
-      'echo "cwd=$(ls | wc -l | tr -d " ") secret=${ZETTA_SECRET:-none} arg=$2"',
+      'for a in "$@"; do last="$a"; done; echo "cwd=$(ls | wc -l | tr -d " ") secret=${ZETTA_SECRET:-none} arg=$last"',
     );
     process.env.ZETTA_SECRET = "leak";
     const out = await runCli({

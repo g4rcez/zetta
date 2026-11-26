@@ -1,16 +1,7 @@
-import {
-  chmod,
-  mkdir,
-  mkdtemp,
-  open,
-  readdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { openInside, readInside } from "../fs-inside";
 import { maskSecrets } from "./processes";
 import { sleep } from "./sleep";
 
@@ -30,6 +21,8 @@ export const LIVE_FILE_CAP = 1_048_576;
 /** The first read of a long output starts this far from its end. */
 const FIRST_READ = 65_536;
 const READ_MAX = 65_536;
+/** The longest command text read back from the folder. */
+const CMD_CAP = 1_048_576;
 
 /**
  * Entry point: runs the shell command as the CLI would. Only a Bash-tool command (it ends by recording the cwd with `pwd -P >|`) is
@@ -150,7 +143,7 @@ export async function lastOutputAt(signal: AbortSignal): Promise<number | undefi
       (n) => n.endsWith(".out") || n.endsWith(".cmd"),
     );
     for (const name of names) {
-      const info = await stat(join(run.dir, name)).catch(() => undefined);
+      const info = await lstat(join(run.dir, name)).catch(() => undefined);
       if (info && (newest === undefined || info.mtimeMs > newest)) newest = info.mtimeMs;
     }
   }
@@ -173,9 +166,10 @@ export async function syncRun(run: LiveRun) {
   const found: { name: string; text: string; at: number }[] = [];
   for (const name of names) {
     const path = join(run.dir, name);
+    // The bot's container writes this folder: `readInside` follows no link it may put here.
     const [text, info] = await Promise.all([
-      readFile(path, "utf8").catch(() => undefined),
-      stat(path).catch(() => undefined),
+      readInside(run.dir, name, CMD_CAP).then((b) => b?.toString("utf8")),
+      lstat(path).catch(() => undefined),
     ]);
     if (text !== undefined && info) found.push({ name, text: plain(text), at: info.mtimeMs });
   }
@@ -216,11 +210,11 @@ export function scrub(text: string, secrets: readonly string[]): string {
 export const secretValues = (env: Record<string, string> | undefined): string[] =>
   Object.values(env ?? {}).filter((v) => v.length >= 8);
 
-async function readFrom(file: string, from: number, max: number) {
-  const handle = await open(file, "r").catch(() => undefined);
-  if (!handle) return undefined;
+async function readFrom(dir: string, file: string, from: number, max: number) {
+  const opened = await openInside(dir, file);
+  if (!opened) return undefined;
+  const { handle, size } = opened;
   try {
-    const { size } = await handle.stat();
     if (size <= from) return { bytes: Buffer.alloc(0), size };
     const bytes = Buffer.alloc(Math.min(max, size - from));
     const { bytesRead } = await handle.read(bytes, 0, bytes.length, from);
@@ -260,12 +254,17 @@ export async function* followStep(
     const finished = step.done || run.closed;
     let grew = false;
     if (step.file) {
-      const got = await readFrom(step.file, offset, first ? Number.MAX_SAFE_INTEGER : READ_MAX);
+      const got = await readFrom(
+        run.dir,
+        step.file,
+        offset,
+        first ? Number.MAX_SAFE_INTEGER : READ_MAX,
+      );
       if (got) {
         if (first && got.size > FIRST_READ) {
           // Start near the end; the missing top is said once.
           offset = got.size - FIRST_READ;
-          const tail = await readFrom(step.file, offset, FIRST_READ);
+          const tail = await readFrom(run.dir, step.file, offset, FIRST_READ);
           if (tail) {
             yield "[earlier output not shown]\n";
             offset += tail.bytes.length;

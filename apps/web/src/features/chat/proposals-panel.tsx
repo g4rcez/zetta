@@ -356,6 +356,9 @@ export function ProposalCard({
             </>
           )}
         </ItemTitle>
+        {p.sharedFrom && (
+          <p className="text-xs text-muted-foreground">From {p.sharedFrom}’s bot, not yours.</p>
+        )}
         <ul className="space-y-0.5 text-xs text-muted-foreground">
           {p.diff.map((d, i) => (
             <li key={`${d.field}-${i}`} className="break-words">

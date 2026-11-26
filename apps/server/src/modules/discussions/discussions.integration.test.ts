@@ -607,6 +607,36 @@ suite("group discussions against compose postgres", () => {
     expect((await call(A, "POST", `/api/discussions/${id}/silence`)).status).toBe(409);
   });
 
+  // A colleague's bot follows its owner's instructions: its posts could steer the person's own bot.
+  test("in a room with someone else's bot, the person's own bot runs no code and its writes wait", async () => {
+    const mine = await makeBot(A, "Steered", { harness: "claude-code", codeAccess: true });
+    const visitor = await makeBot(B, "Visitor");
+    replies.Steered = [
+      'On it.\n```zetta:task\n{"action":"add","title":"Steered task"}\n```',
+      "Done.",
+    ];
+    replies.Visitor = ["ok"];
+    const before = runs.length;
+    const created = await call(A, "POST", "/api/discussions", {
+      title: "Mixed room",
+      goal: "x",
+      members: [{ bot: mine.id }, { bot: visitor.id }],
+      firstMessage: `[@Steered](bot:${mine.id}) go`,
+    });
+    expect(created.status).toBe(201);
+    await worker.drain();
+    const ran = runs.slice(before).find((r) => r.bot === "Steered")!;
+    expect(ran.noCode).toBe(true);
+    const held = await db.$client.query(
+      "select kind, status from config_proposal where proposed_by_bot_id = $1",
+      [mine.id],
+    );
+    expect(held.rows).toEqual([{ kind: "bot_action", status: "pending" }]);
+    expect(
+      (await db.$client.query("select 1 from task where title = 'Steered task'", [])).rows,
+    ).toEqual([]);
+  });
+
   test("outside content: a code bot waits for an approved brief; a changed brief asks again; secrets never reach the group", async () => {
     const front = await makeBot(A, "Front");
     await makeBot(A, "Coder", { harness: "claude-code" });
@@ -653,6 +683,11 @@ suite("group discussions against compose postgres", () => {
     expect(
       runs.find((x) => x.bot === "Front" && x.prompt.includes("Customer bug"))!.prompt,
     ).toContain("outside people");
+    // The bot that received the outside message runs no code in the room it opened; a member the person approved may.
+    expect(runs.find((x) => x.bot === "Front" && x.prompt.includes("Customer bug"))!.noCode).toBe(
+      true,
+    );
+    expect(runs.find((x) => x.bot === "Coder")!.noCode).toBeFalsy();
     // The approval is for this bot in this room: a changed context and a new post run at once, with no second card.
     expect(
       (await call(A, "GET", `/api/discussions/${r.discussion.id}`)).json.members.find(

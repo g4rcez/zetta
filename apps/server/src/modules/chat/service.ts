@@ -52,6 +52,7 @@ import {
 import { inboundEvent, inboundRoute, inboundThread } from "@zetta/db/schema/inbound";
 import { team as teamTable, teamMember } from "@zetta/db/schema/teams";
 import { chatQueue, goalLoop } from "@zetta/db/schema/chat";
+import { SHARED_REFUSED, sharedVerdict, type SharedBot } from "./shared-bot-policy";
 import {
   appLinkBlock,
   inboundCardBlock,
@@ -67,7 +68,7 @@ import {
   type WhatsappBody,
 } from "./tools";
 import type { ComputerService } from "../computer/service";
-import { guardedWords, ruleOf, workspacePath } from "../computer/machine-policy";
+import { guardedWords, ruleOf, stagedTransfer, workspacePath } from "../computer/machine-policy";
 import type { MachineService } from "../computer/machines";
 import { FileAccessError, type FileStore } from "./files";
 import {
@@ -196,6 +197,7 @@ import { DiscussionError, type Claimed, type DiscussionStore } from "../discussi
 import {
   botPeer,
   discussion as discussionTable,
+  discussionMember,
   discussionTurn,
   type TurnStep,
 } from "@zetta/db/schema/discussions";
@@ -511,7 +513,12 @@ export type Converse = {
    * A request a bot stopped on while waiting for the Chief, run again: `content` is the short label, `prompt` what the bot gets,
    * `requestId` the user message being run again (so a second stop in this turn points at it, not at the label).
    */
-  retry?: { prompt: string; requestId: string };
+  retry?: {
+    prompt: string;
+    requestId: string;
+    /** The prompt carries words from a room with someone else's bot (see shared-bot-policy.ts). */
+    shared?: "nearby";
+  };
   /** Something happened that the bot waits for (a person moved a task it asked for): `content` is the short label, `prompt` what the bot gets. */
   notice?: { prompt: string; wave?: number };
   /** Internal only (no HTTP route sets it): the person said this aloud in a voice call (modules/voice), so the answer is spoken. */
@@ -547,6 +554,8 @@ export type ToolScope = {
   loopId?: string;
   /** Set only while the writes of a card the person approved run: host code may run now, the click was the consent. */
   approved?: boolean;
+  /** A bot someone else owns takes part (see shared-bot-policy.ts). Set when the turn starts; the owner check is read again per call. */
+  shared?: SharedBot;
   /** Room turn only: members this reply handed a task to with `zetta:assign`. A post that assigned work is never taken for "waiting" or "finished". */
   assigned?: string[];
   /** Team room turn only: the bot's place in the team. The "chief" leads the work, so its writes are not held for a card. */
@@ -934,6 +943,9 @@ export function createChatService(
   ) {
     const notes: string[] = [];
     let handoff = false;
+    // Read from the bot itself, so no caller can leave it out; `nearby` is known only where the turn started.
+    const sharedWith: SharedBot | undefined =
+      who.ownerUserId !== actor.userId ? "bot" : scope?.shared;
     const browserResults: string[] = [];
     const views: WhatsappBody[] = [];
     /** Polls the bot made in this round: they go on its reply. */
@@ -1026,7 +1038,16 @@ export function createChatService(
     };
     /** Writes the bot asked for after reading outside content: one card holds them all; Approve runs them in order (see `bot_action` in approve). */
     const deferred: ToolCall[] = [];
-    const askToRun = async (calls: ToolCall[]) => {
+    /** Runs on the server itself asked by a bot that runs in a container (see `leavesContainer`). */
+    const leaving: ToolCall[] = [];
+    /** Calls a card holds only because a bot someone else owns takes part. */
+    const fromShared: ToolCall[] = [];
+    const askToRun = async (
+      calls: ToolCall[],
+      why = "because it read outside content first",
+      /** Every call of the card runs on Approve, not only the kinds held after outside content. */
+      all = false,
+    ) => {
       const row = await insertProposal(db, {
         resultLink: approvalLink(who, scope),
         ownerUserId: actor.userId,
@@ -1044,6 +1065,7 @@ export function createChatService(
             loopId: scope?.loopId,
           },
           calls,
+          ...(all && { all }),
         },
         diff: calls.map((c) => ({ field: c.kind, from: null, to: describeCall(c) })),
       });
@@ -1054,7 +1076,7 @@ export function createChatService(
       });
       proposals.push(row!.id);
       notes.push(
-        `🔐 ${who.name} wants to make ${calls.length} change${calls.length === 1 ? "" : "s"}. They wait for your approval because it read outside content first.`,
+        `🔐 ${who.name} wants to make ${calls.length} change${calls.length === 1 ? "" : "s"}. They wait for your approval ${why}.`,
       );
       browserResults.push(
         `${calls.map(describeCall).join("; ")}: waiting for the user's approval on a card; nothing has changed yet. Do not send them again and do not say they are done.`,
@@ -1090,10 +1112,45 @@ export function createChatService(
         );
         continue;
       }
+      // A bot someone else owns, or one working beside it, gets less than the person's own (see shared-bot-policy.ts).
+      if (sharedWith) {
+        const verdict = sharedVerdict(
+          {
+            kind: c.kind,
+            args: c.args,
+            chief: isChiefCall(c),
+            effect:
+              c.kind === "plugin"
+                ? getPlugin(c.args.plugin)?.tools?.find((t) => t.name === c.args.tool)?.effect
+                : undefined,
+          },
+          sharedWith,
+        );
+        if (verdict === "refuse") {
+          await audit(db, actor.userId, {
+            kind: "tool_call",
+            botId: who.id,
+            outcome: "denied",
+            detail: `shared:${c.kind}`,
+          });
+          browserResults.push(
+            `${c.kind}: not allowed ${sharedWith === "bot" ? "for a bot someone else owns: tell the user to do this with their own bot" : "in a conversation with a bot someone else owns"}.`,
+          );
+          notes.push(
+            `🛡 ${who.name} tried ${describeCall(c)}, which is ${SHARED_REFUSED[sharedWith]}`,
+          );
+          continue;
+        }
+        if (verdict === "hold" && !scope?.approved) {
+          fromShared.push(c);
+          continue;
+        }
+      }
       // After outside content these writes would apply at once: they wait for one card instead (see askToRun).
       // The Chief and a team room's lead run the work the user asked for: their writes apply, they are not held for a card.
       // Tasks and hand-offs never wait, for any bot: the board is the user's own, and a card per task blocked the work.
       if (
+        !sharedWith &&
         writes === "ask" &&
         scope?.tainted &&
         defersWrite(c, who) &&
@@ -1103,6 +1160,11 @@ export function createChatService(
         c.kind !== "assign"
       ) {
         deferred.push(c);
+        continue;
+      }
+      // With bots in containers, a script on the server itself would leave the bot's container: it waits for a click.
+      if (!scope?.approved && (await leavesContainer(actor, c))) {
+        leaving.push(c);
         continue;
       }
       if (c.kind === "poll") {
@@ -1996,9 +2058,14 @@ export function createChatService(
                       local: await workspacePath(dir, a.local, "read"),
                       remote: a.remote,
                     };
-          const r = await withTimeout(
-            machines.exec(actor, a.machine, op, { botId: who.id, botName: who.name, signal }),
-            330_000,
+          const exec = (step: typeof op) =>
+            withTimeout(
+              machines.exec(actor, a.machine, step, { botId: who.id, botName: who.name, signal }),
+              330_000,
+            );
+          // A file moves through a private folder: the transfer program never opens a path in the folder the bot writes.
+          const r = await (
+            op.type === "get" || op.type === "put" ? stagedTransfer(dir, op, exec) : exec(op)
           ).catch(async (e: unknown) => {
             if ((e as { code?: string }).code !== "NOT_FOUND") throw e;
             // Not shared with this bot (or no such machine): say which ones it may use, and tell the user how to share.
@@ -2147,7 +2214,9 @@ export function createChatService(
             },
             jobHold
               ? "because background work never replaces an item's text or archives one by itself"
-              : undefined,
+              : sharedWith
+                ? "because a bot someone else owns takes part"
+                : undefined,
           );
           continue;
         }
@@ -2910,8 +2979,16 @@ export function createChatService(
       }
     }
     if (deferred.length && !signal?.aborted) await askToRun(deferred);
+    if (fromShared.length && !signal?.aborted)
+      await askToRun(fromShared, "because a bot someone else owns takes part", true);
+    if (leaving.length && !signal?.aborted)
+      await askToRun(
+        leaving,
+        "because they run on the server itself, outside the bot's container",
+        true,
+      );
     // Nothing here deletes data, so a proposal from a turn that read no outside text applies at once; with outside text in play it stays a card.
-    if (writes === "apply" && !scope?.tainted && scope?.policy !== "inbound") {
+    if (writes === "apply" && !sharedWith && !scope?.tainted && scope?.policy !== "inbound") {
       const stale = (l: string[], re: RegExp) => {
         for (let i = l.length - 1; i >= 0; i--) if (re.test(l[i]!)) l.splice(i, 1);
       };
@@ -2961,7 +3038,12 @@ export function createChatService(
     }
     // Cards the person answered once with "Always allow for this bot" apply without asking again; each still shows as a done line.
     // Never for outside people's chats (see approval-rules.ts for the kinds that are never remembered).
-    if (scope?.policy !== "inbound" && !signal?.aborted && proposals.length > firstProposal) {
+    if (
+      !sharedWith &&
+      scope?.policy !== "inbound" &&
+      !signal?.aborted &&
+      proposals.length > firstProposal
+    ) {
       const waiting = proposals.slice(firstProposal);
       const rows = await db
         .select({
@@ -3748,6 +3830,12 @@ export function createChatService(
    * code execution, so it needs code access, as a bot's own Bash does. What a run printed is third-party text: it comes back framed as
    * untrusted data. A reply shows the link once per playground.
    */
+  /** Whether a call would run a script on the server itself while bots run in containers. */
+  async function leavesContainer(actor: ActiveActor, c: ToolCall) {
+    if (c.kind !== "playground" || c.args.action !== "run" || !dockerConfig()) return false;
+    const found = await deps.playground?.get(actor, c.args.id).catch(() => undefined);
+    return found?.runner === "host";
+  }
   async function runPlayground(
     actor: ActiveActor,
     who: typeof bot.$inferSelect,
@@ -4126,6 +4214,9 @@ export function createChatService(
       return `${c.kind} ${String(a.plugin ?? a.server ?? "")}.${String(a.tool ?? "")}`;
     const what = [
       a.action,
+      a.title ?? a.slug,
+      a.visibility === "team" ? "(shared with the team)" : undefined,
+      a.runner ? `on the ${String(a.runner)} runner` : undefined,
       a.url ??
         a.app ??
         a.key ??
@@ -4375,6 +4466,7 @@ export function createChatService(
           // The person's own chat message is consent for the writes it asks for; outside content the server saw, loops, rooms and
           // turns Zetta started itself ask (see approval-policy.ts).
           writeMode({
+            shared: who.ownerUserId !== actor.userId || ctx.scope?.shared !== undefined,
             seenOutside: untrusted,
             reach,
             place:
@@ -4514,7 +4606,44 @@ export function createChatService(
    * user's per-run env, the tool loop, then the saved row and its audit. Shared by chat turns and group discussion turns.
    */
   /** Runs one bot answer and keeps `liveBots` in step with it: it starts planning, turns to working at the first text, and ends with the answer. */
-  async function* answerAs(actor: ActiveActor, a: AnswerArgs): ReturnType<typeof runAnswer> {
+  /** Whether a bot someone else owns sits in a room, or has posted in it. */
+  async function sharedBotInRoom(actor: ActiveActor, discussionId: string, conversationId: string) {
+    const theirs = ne(bot.ownerUserId, actor.userId);
+    const [sits] = await db
+      .select({ id: bot.id })
+      .from(discussionMember)
+      .innerJoin(bot, eq(bot.id, discussionMember.botId))
+      .where(and(eq(discussionMember.discussionId, discussionId), theirs))
+      .limit(1);
+    if (sits) return true;
+    const [posted] = await db
+      .select({ id: bot.id })
+      .from(message)
+      .innerJoin(bot, eq(bot.id, message.botId))
+      .where(and(eq(message.conversationId, conversationId), theirs))
+      .limit(1);
+    return Boolean(posted);
+  }
+  /**
+   * What a turn gets, by who takes part (see shared-bot-policy.ts). A bot someone else owns, and the person's own bot beside one,
+   * run no code and get none of the person's computers or servers. A turn for outside people runs no code either, in a room too.
+   */
+  async function guarded(actor: ActiveActor, a: AnswerArgs): Promise<AnswerArgs> {
+    const shared: SharedBot | undefined =
+      a.who.ownerUserId !== actor.userId
+        ? "bot"
+        : (a.scope?.shared ??
+          (a.scope?.discussionId && (await sharedBotInRoom(actor, a.scope.discussionId, a.convId))
+            ? "nearby"
+            : undefined));
+    return {
+      ...a,
+      noCode: a.noCode || shared === "nearby" || a.scope?.policy === "inbound",
+      ...(shared && { scope: { ...(a.scope ?? { policy: "default" as const }), shared } }),
+    };
+  }
+  async function* answerAs(actor: ActiveActor, asked: AnswerArgs): ReturnType<typeof runAnswer> {
+    const a = await guarded(actor, asked);
     const run = runAnswer(actor, a);
     let id: string | undefined;
     try {
@@ -4634,7 +4763,7 @@ export function createChatService(
         ? mcp?.plugins.promptFor(actor, who.id, a.scope?.pluginTurn).catch(() => "")
         : undefined,
       // Claude Code also gets the MCP servers this user bound to the bot (tokens in the run environment, never in the arguments).
-      ready && who.harness === "claude-code"
+      ready && !a.scope?.shared && who.harness === "claude-code"
         ? mcp?.runConfig(actor, who.id).catch(() => undefined)
         : undefined,
     ]);
@@ -4710,7 +4839,8 @@ export function createChatService(
       runEnv = envHandle?.env;
       // The GitHub plugin is the user's consent for this bot to use their account from the CLI (git and gh).
       // The server's own gh login comes first; the plugin's token is read only when there is none.
-      const needsGithub = a.canned === undefined && !envHandle?.env.GITHUB_TOKEN;
+      const needsGithub =
+        a.canned === undefined && !a.scope?.shared && !envHandle?.env.GITHUB_TOKEN;
       const githubViaCli =
         needsGithub &&
         (await mcp?.isBound(actor, who.id, "github").catch(() => false)) &&
@@ -4736,6 +4866,7 @@ export function createChatService(
         who.harness === "claude-code" &&
         who.computerMode === "desktop" &&
         who.onboarded &&
+        !a.scope?.shared &&
         !a.noCode
       ) {
         runTool = mintRunToken({ userId: actor.userId, botId: who.id, signal: a.signal });
@@ -5874,6 +6005,12 @@ export function createChatService(
   ) {
     if (help.loopId) return deps.loops?.resumeWith(help.loopId, answer);
     if (!help.messageId) return;
+    // An answer that came from a room with someone else's bot may carry its words: the rerun gets what that room got.
+    const [room] = await db
+      .select({ conversationId: discussionTable.conversationId })
+      .from(discussionTable)
+      .where(eq(discussionTable.id, discussionId));
+    const beside = room && (await sharedBotInRoom(actor, discussionId, room.conversationId));
     // Usually the Chief answered; when the company chart sent the request to the bot's manager, that bot did.
     const [helper] = await db
       .select({ name: bot.name, kind: bot.kind })
@@ -5889,6 +6026,7 @@ export function createChatService(
         conversationId: help.conversationId,
         messageId: help.messageId,
         key: `help-retry:${discussionId}`,
+        ...(beside && { shared: "nearby" as const }),
       },
       `${Answered} answered. Running your last request again.`,
       (request) =>
@@ -6291,7 +6429,7 @@ export function createChatService(
   async function rerunStopped(
     actor: ActiveActor,
     botId: string,
-    r: { conversationId: string; messageId: string; key: string },
+    r: { conversationId: string; messageId: string; key: string; shared?: "nearby" },
     notice: string,
     retryPrompt: (request: string) => string,
   ) {
@@ -6311,6 +6449,7 @@ export function createChatService(
             retry: {
               prompt: retryPrompt(original.content),
               requestId: r.messageId,
+              ...(r.shared && { shared: r.shared }),
             },
           });
           for await (const _ of run.follow());
@@ -6756,24 +6895,39 @@ export function createChatService(
       place: { chatId?: string; roomId?: string; newChat?: boolean } = {},
     ) => {
       const links = proposalLinks(botId, place);
-      return (
-        await db
-          .select()
-          .from(configProposal)
-          .where(
-            and(
-              eq(configProposal.ownerUserId, actor.userId),
-              eq(configProposal.status, "pending"),
-              // Past its deadline a card is gone from the list at once, before the sweeper closes it.
-              gt(configProposal.expiresAt, new Date()),
-              botId
-                ? sql`coalesce(${configProposal.proposedByBotId}, ${configProposal.botId}) = ${botId}`
-                : undefined,
-              links ? inArray(configProposal.resultLink, links) : undefined,
-            ),
-          )
-          .orderBy(asc(configProposal.createdAt))
-      ).map((p) => ({ ...p, confirm: confirmFor(p.kind) }));
+      const rows = await db
+        .select()
+        .from(configProposal)
+        .where(
+          and(
+            eq(configProposal.ownerUserId, actor.userId),
+            eq(configProposal.status, "pending"),
+            // Past its deadline a card is gone from the list at once, before the sweeper closes it.
+            gt(configProposal.expiresAt, new Date()),
+            botId
+              ? sql`coalesce(${configProposal.proposedByBotId}, ${configProposal.botId}) = ${botId}`
+              : undefined,
+            links ? inArray(configProposal.resultLink, links) : undefined,
+          ),
+        )
+        .orderBy(asc(configProposal.createdAt));
+      /** The owners of the asking bots that belong to someone else: their cards say so. */
+      const askers = rows.flatMap((p) => (p.proposedByBotId ? [p.proposedByBotId] : []));
+      const owners = new Map(
+        askers.length
+          ? (
+              await db
+                .select({ id: bot.id, name: user.name })
+                .from(bot)
+                .innerJoin(user, eq(user.id, bot.ownerUserId))
+                .where(and(inArray(bot.id, askers), ne(bot.ownerUserId, actor.userId)))
+            ).map((r) => [r.id, r.name] as const)
+          : [],
+      );
+      return rows.map((p) => {
+        const sharedFrom = p.proposedByBotId ? owners.get(p.proposedByBotId) : undefined;
+        return { ...p, confirm: confirmFor(p.kind), ...(sharedFrom && { sharedFrom }) };
+      });
     },
     /** Applying is one transaction: the pending proposal is claimed, the bot must still match the version AND content hash the diff was
      * computed against (else stale), the revision is recorded, and a concurrent second approval finds nothing pending. */
@@ -6838,6 +6992,22 @@ export function createChatService(
           )
             throw new ProposalSelectionError();
         }
+      }
+      // A card from a bot someone else owns is answered by the person, each time.
+      const [theirs] = await db
+        .select({ id: configProposal.id })
+        .from(configProposal)
+        .innerJoin(bot, eq(bot.id, configProposal.proposedByBotId))
+        .where(
+          and(
+            eq(configProposal.id, id),
+            eq(configProposal.ownerUserId, actor.userId),
+            ne(bot.ownerUserId, actor.userId),
+          ),
+        );
+      if (theirs) {
+        if ((how.by ?? "user") !== "user") throw new AccessError("ACCESS_DENIED");
+        how = { ...how, remember: "none" };
       }
       let chiefNote: string | undefined;
       let savedMemory: { slug: string; title: string; created: boolean } | undefined;
@@ -6980,7 +7150,9 @@ export function createChatService(
       // Creation proposals: the claim above guarantees exactly-once; any failure marks the proposal stale instead of leaving it half-applied.
       try {
         const a = res.create.args as Record<string, unknown>;
-        if (res.create.kind === "create_bot") await this.createBot(actor, a as never);
+        // A bot proposed by someone else's bot carries their words: it is not shared with the team by the same click.
+        if (res.create.kind === "create_bot")
+          await this.createBot(actor, { ...a, ...(theirs && { visibility: "private" }) } as never);
         else if (res.create.kind === "create_memory_item") {
           if (!deps.memory) throw new Error("memory unavailable");
           const w = a as {
@@ -7116,14 +7288,15 @@ export function createChatService(
             conversationId: string | null;
             scope: Pick<ToolScope, "policy" | "discussionId" | "origin" | "loopId">;
             calls: ToolCall[];
+            all?: boolean;
           };
+          // A team bot's card is answered too: what it may do for this person is decided again as its calls run.
           const [who] = await db
             .select()
             .from(bot)
-            .where(
-              and(eq(bot.id, w.botId), eq(bot.ownerUserId, actor.userId), eq(bot.archived, false)),
-            );
+            .where(and(eq(bot.id, w.botId), visibleBot(actor), eq(bot.archived, false)));
           if (!who) throw new Error("bot unavailable");
+          const heldCalls = w.calls.filter((c) => w.all || defersWrite(c, who));
           const heldScope: ToolScope = {
             ...w.scope,
             policy: "default",
@@ -7133,7 +7306,7 @@ export function createChatService(
           const ran = await runTools(
             actor,
             who,
-            w.calls.filter((c) => defersWrite(c, who)),
+            heldCalls,
             [],
             [],
             {},
@@ -7145,7 +7318,7 @@ export function createChatService(
             "apply",
           );
           chiefNote = ran.notes.join("\n") || undefined;
-          const doneCalls = w.calls.filter((c) => defersWrite(c, who));
+          const doneCalls = heldCalls;
           const results = defuse([...ran.notes, ...ran.browserResults].join("\n").slice(0, 3000));
           if (heldScope.discussionId) {
             // The post that asked for the hand-over is long saved, so a mention in the note would wake nobody: post it to the room now.
@@ -8228,6 +8401,7 @@ export function createChatService(
             ...(input.loop ? { loopId: input.loop.id } : {}),
             ...(input.memoryJob ? { memoryApply: { sources: input.memoryJob.sources } } : {}),
             ...(input.withoutItems ? { without: input.withoutItems } : {}),
+            ...(input.retry?.shared ? { shared: input.retry.shared } : {}),
             ...(mailCtx ? { mailContext: mailCtx } : {}),
             personText: step
               ? ""

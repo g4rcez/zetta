@@ -7,101 +7,49 @@ import {
   PencilSimpleIcon,
   PushPinIcon,
   SmileyIcon,
-  SpeakerHighIcon,
-  ThumbsDownIcon,
-  ThumbsUpIcon,
-  type Icon,
 } from "@phosphor-icons/react";
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent } from "react";
 
 import { ActionHint } from "@/components/action-hint";
-import { Button, Dropdown } from "@/components/ui";
+import { Button, Dropdown, DROPDOWN_PICKER, DROPDOWN_ROWS } from "@/components/ui";
+import { toast } from "@/lib/notify";
 
-import { rateable, useFeedback } from "../bot-quality/feedback";
-import { useCopy } from "../shared/use-copy";
+import { RateRows, RatingNote } from "../bot-quality/feedback";
+import { ListenMenuRow } from "../voice/listen-button";
 import type { Row } from "./chat-rows";
 import { EmojiPicker } from "./emoji-picker";
-import { useListenEnabled } from "../voice/listen-button";
-import { getBotVoice, toggleListen } from "../voice/speech-player";
+import { MenuRow } from "./menu-row";
 
-const ignoreCopyFailure = () => {};
+/** `toolbar`: the "⋯" of the desktop toolbar. `sheet`: the one button every message has on a screen that cannot hover. */
+export type ActionsPlacement = "toolbar" | "sheet";
 
-/** One line of the action sheet: an icon and a word, as wide as the sheet so a thumb hits it. */
-function SheetItem({
-  icon: Glyph,
-  onClick,
-  pressed,
-  children,
-}: {
-  icon: Icon;
-  onClick: () => void;
-  pressed?: boolean | undefined;
-  children: ReactNode;
-}) {
-  return (
-    // No hint: the button has visible text.
-    <Button
-      type="button"
-      role="menuitem"
-      variant="ghost"
-      // "!": the library's .__button centers its content and beat justify-start, so the sheet read as a centered list.
-      className="h-11 w-full !justify-start gap-3 px-3 text-sm"
-      {...(pressed === undefined ? {} : { "aria-pressed": pressed })}
-      onClick={onClick}
-    >
-      <Glyph aria-hidden="true" className="size-4" />
-      {children}
-    </Button>
-  );
-}
-
-/** The thumbs of the sheet: the same rating the toolbar gives, one tap each. Taking the chosen one again takes the rating back. */
-function SheetRate({ row, onDone }: { row: Row; onDone: () => void }) {
-  const feedback = useFeedback();
-  if (!feedback || !rateable(row)) return null;
-  const mine = feedback.ratings[row.id]?.rating;
-  const rate = (value: "up" | "down") => {
-    onDone();
-    void (mine === value ? feedback.clear(row.id) : feedback.rate(row.id, value)).catch(
-      ignoreCopyFailure,
+const copyText = (text: string) =>
+  void Promise.resolve()
+    .then(() => navigator.clipboard.writeText(text))
+    .then(
+      () => toast.success("Copied"),
+      () => toast.error("Could not copy the message."),
     );
-  };
-  return (
-    <>
-      <SheetItem icon={ThumbsUpIcon} pressed={mine === "up"} onClick={() => rate("up")}>
-        Good answer
-      </SheetItem>
-      <SheetItem icon={ThumbsDownIcon} pressed={mine === "down"} onClick={() => rate("down")}>
-        Bad answer
-      </SheetItem>
-    </>
-  );
-}
 
-/** "Listen" in the sheet of a bot's message, when text to speech is on. The reading goes on after the sheet closes. */
-function SheetListen({ row, onDone }: { row: Row; onDone: () => void }) {
-  const enabled = useListenEnabled();
-  if (!enabled || row.role !== "assistant" || row.streaming || !row.content.trim()) return null;
-  return (
-    <SheetItem
-      icon={SpeakerHighIcon}
-      onClick={() => {
-        onDone();
-        void toggleListen(
-          row.id,
-          row.content,
-          row.botId ? getBotVoice(row.botId) : undefined,
-          row.botId ?? undefined,
-        );
-      }}
-    >
-      Listen
-    </SheetItem>
-  );
+/** Arrow keys, Home and End walk the rows, as a menu does. Tab still leaves it. */
+function walkMenu(e: KeyboardEvent<HTMLDivElement>) {
+  const step = { ArrowDown: 1, ArrowUp: -1, Home: 0, End: 0 }[e.key];
+  if (step === undefined) return;
+  e.preventDefault();
+  const rows = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+  const at = rows.indexOf(document.activeElement as HTMLElement);
+  const next =
+    e.key === "Home"
+      ? 0
+      : e.key === "End"
+        ? rows.length - 1
+        : (at + step + rows.length) % rows.length;
+  rows[next]?.focus();
 }
 
 export type MoreActionsProps = {
   row: Row;
+  placement?: ActionsPlacement;
   inThread: boolean;
   pinned: boolean;
   onReact: (emoji: string) => void;
@@ -115,11 +63,12 @@ export type MoreActionsProps = {
 };
 
 /**
- * The action sheet of a message on a screen that cannot hover: a "More" button on every message that opens Quote, Open thread, React,
- * Pin, Copy, Edit (the person's own messages) and the rating of a bot's answer. The toolbar of a desktop keeps these as separate buttons.
+ * The menu of a message. In the toolbar it holds what has no button of its own: the rating of a bot's answer, Pin, Copy, Listen, Edit
+ * (the person's own messages) and Save to memory. On a touch screen there is no toolbar, so it also holds Quote, Open thread and React.
  */
 export function MoreActions({
   row,
+  placement = "sheet",
   inThread,
   pinned,
   onReact,
@@ -130,30 +79,41 @@ export function MoreActions({
   onSaveToMemory,
 }: MoreActionsProps) {
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<"actions" | "react">("actions");
-  const { copy } = useCopy(ignoreCopyFailure);
-  const close = () => setOpen(false);
+  const [view, setView] = useState<"actions" | "react" | "note">("actions");
+  const sheet = placement === "sheet";
+  const label = sheet ? "More" : "More actions";
+  const close = () => {
+    setOpen(false);
+    setView("actions");
+  };
   const then = (run: () => void) => () => {
     close();
     run();
   };
+  const ratings = <RateRows row={row} onDone={close} onNote={() => setView("note")} />;
+  const edit = onEdit && (
+    <MenuRow icon={PencilSimpleIcon} onClick={then(onEdit)}>
+      Edit
+    </MenuRow>
+  );
+  const listen = row.role === "assistant" && !row.streaming && (
+    <ListenMenuRow id={row.id} text={row.content} botId={row.botId ?? undefined} onDone={close} />
+  );
   return (
     <Dropdown
       asChild
       open={open}
-      onChange={(next) => {
-        setOpen(next);
-        if (!next) setView("actions");
-      }}
+      onChange={(next) => (next ? setOpen(true) : close())}
       aria-label="Message actions"
+      className={view === "react" ? DROPDOWN_PICKER : DROPDOWN_ROWS}
       trigger={
-        <ActionHint label="More">
+        <ActionHint label={label}>
           <Button
-            size="icon-sm"
+            size={sheet ? "icon-sm" : "icon-xs"}
             variant="ghost"
-            aria-label="More"
+            aria-label={label}
             // "!": the library's .__button sets position: relative, which beat "absolute" and left the button in the row, at its left edge.
-            className="!absolute top-0.5 right-2 z-10"
+            className={sheet ? "!absolute top-0.5 right-2 z-10" : ""}
           >
             <DotsThreeIcon weight="bold" />
           </Button>
@@ -164,44 +124,62 @@ export function MoreActions({
         <EmojiPicker
           onPick={(emoji) => {
             close();
-            setView("actions");
             onReact(emoji);
           }}
         />
+      ) : view === "note" ? (
+        <RatingNote row={row} onDone={close} />
       ) : (
-        <div role="menu" aria-label="Message actions" className="flex w-56 flex-col py-1">
-          {onQuote && (
-            <SheetItem icon={ArrowBendUpLeftIcon} onClick={then(onQuote)}>
-              Quote
-            </SheetItem>
+        <div
+          role="menu"
+          aria-label="Message actions"
+          data-placement={placement}
+          className="flex w-56 flex-col"
+          onKeyDown={walkMenu}
+        >
+          {sheet ? (
+            <>
+              {onQuote && (
+                <MenuRow icon={ArrowBendUpLeftIcon} onClick={then(onQuote)}>
+                  Quote
+                </MenuRow>
+              )}
+              {!inThread && (
+                <MenuRow icon={ChatTextIcon} onClick={then(onReply)}>
+                  Open thread
+                </MenuRow>
+              )}
+              <MenuRow icon={SmileyIcon} onClick={() => setView("react")}>
+                React
+              </MenuRow>
+            </>
+          ) : (
+            ratings
           )}
-          {!inThread && (
-            <SheetItem icon={ChatTextIcon} onClick={then(onReply)}>
-              Open thread
-            </SheetItem>
-          )}
-          <SheetItem icon={SmileyIcon} onClick={() => setView("react")}>
-            React
-          </SheetItem>
           {onPin && (
-            <SheetItem icon={PushPinIcon} onClick={then(onPin)}>
+            <MenuRow icon={PushPinIcon} onClick={then(onPin)}>
               {pinned ? "Unpin" : "Pin"}
-            </SheetItem>
+            </MenuRow>
           )}
-          <SheetItem icon={CopyIcon} onClick={then(() => void copy(row.content))}>
+          <MenuRow icon={CopyIcon} onClick={then(() => copyText(row.content))}>
             Copy
-          </SheetItem>
-          {onEdit && (
-            <SheetItem icon={PencilSimpleIcon} onClick={then(onEdit)}>
-              Edit
-            </SheetItem>
+          </MenuRow>
+          {sheet ? (
+            <>
+              {edit}
+              {listen}
+              {ratings}
+            </>
+          ) : (
+            <>
+              {listen}
+              {edit}
+            </>
           )}
-          <SheetListen row={row} onDone={close} />
-          <SheetRate row={row} onDone={close} />
           {row.role === "assistant" && (
-            <SheetItem icon={BookmarkSimpleIcon} onClick={then(onSaveToMemory)}>
+            <MenuRow icon={BookmarkSimpleIcon} onClick={then(onSaveToMemory)}>
               Save to memory
-            </SheetItem>
+            </MenuRow>
           )}
         </div>
       )}

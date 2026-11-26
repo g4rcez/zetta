@@ -162,7 +162,7 @@ function DecisionForm({ bot, bots, initial }: { bot: Bot; bots: Bot[]; initial: 
             onChange={(e) => setCfg({ ...cfg, backend: e.target.value as "laya" | "jev" })}
             options={[
               { value: "laya", label: "Laya (built in, free, private)" },
-              { value: "jev", label: "Jev (Typesafe, hosted) - not verified yet" },
+              { value: "jev", label: "Jev (Typesafe, hosted)" },
             ]}
           />
         </>

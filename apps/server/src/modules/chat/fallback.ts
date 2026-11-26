@@ -5,8 +5,13 @@ import { HARNESS_LABELS } from "./harnesses";
 
 type Bot = typeof bot.$inferSelect;
 
-/** Failures that mean "this harness cannot answer now" (limit reached, not signed in, not installed). Slow or flaky runs are not here: they keep their retries. */
-const BLOCKED: readonly HarnessErrorCode[] = ["quota", "auth_required", "not_installed"];
+/** Failures that mean "this harness cannot answer now" (limit reached, not signed in, not installed, not safe to run without code). Slow or flaky runs are not here: they keep their retries. */
+const BLOCKED: readonly HarnessErrorCode[] = [
+  "quota",
+  "auth_required",
+  "not_installed",
+  "no_safe_mode",
+];
 export const blocksHarness = (e: unknown): e is HarnessError =>
   e instanceof HarnessError && BLOCKED.includes(e.code);
 
@@ -24,6 +29,7 @@ const REASON: Record<string, string> = {
   quota: "has reached its usage limit",
   auth_required: "is not signed in",
   not_installed: "is not installed",
+  no_safe_mode: "cannot run here without code access",
 };
 const notice = (u: FallbackUse) =>
   `${label(u.from)} ${REASON[u.reason]} · answering with ${label(u.to)}`;

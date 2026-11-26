@@ -1,31 +1,47 @@
 import { ActionHint } from "@/components/action-hint";
+import {
+  AirplaneIcon,
+  ClockIcon,
+  FlagIcon,
+  HamburgerIcon,
+  HandIcon,
+  HashIcon,
+  LeafIcon,
+  LightbulbIcon,
+  SmileyIcon,
+  SoccerBallIcon,
+  type Icon,
+} from "@phosphor-icons/react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import { Input } from "@/components/ui";
 import { cn } from "@zetta/ui/lib/utils";
 import { saveLocal } from "@/lib/local-storage";
+import { countUse, frequentEmoji, parseUses } from "./emoji-frequency";
 
 type Emoji = { label: string; unicode: string; group: number; tags: string[] };
 type Catalog = {
   emojis: Emoji[];
-  groups: { key: string; label: string; icon: string; order: number }[];
+  groups: { key: string; label: string; order: number }[];
 };
 
 /** Unicode groups that are real emoji (skips "component" modifiers and regional-indicator letters). */
 const SKIPPED_GROUPS = new Set([2]);
-const GROUP_ICONS: Record<string, string> = {
-  "smileys-emotion": "😀",
-  "people-body": "👋",
-  "animals-nature": "🐻",
-  "food-drink": "🍔",
-  "travel-places": "✈️",
-  activities: "⚽",
-  objects: "💡",
-  symbols: "❤️",
-  flags: "🏁",
+const GROUP_ICONS: Record<string, Icon> = {
+  "smileys-emotion": SmileyIcon,
+  "people-body": HandIcon,
+  "animals-nature": LeafIcon,
+  "food-drink": HamburgerIcon,
+  "travel-places": AirplaneIcon,
+  activities: SoccerBallIcon,
+  objects: LightbulbIcon,
+  symbols: HashIcon,
+  flags: FlagIcon,
 };
+const FREQUENT = "frequent";
+/** The recent list from before picks were counted; read only, to fill "Frequently used". */
 const RECENT_KEY = "zetta.recent-emojis";
-const RECENT_MAX = 16;
+const USE_KEY = "zetta.emoji-use";
 
 let catalog: Promise<Catalog> | undefined;
 /** Loads the Unicode emoji set once, lazily, so its ~500KB stays out of the main bundle. */
@@ -50,37 +66,69 @@ function loadCatalog(): Promise<Catalog> {
       .map((e) => ({ label: e.label, unicode: e.unicode, group: e.group, tags: e.tags ?? [] })),
     groups: messages.default.groups
       .filter((g) => !SKIPPED_GROUPS.has(g.order) && g.key !== "component")
-      .map((g) => ({
-        key: g.key,
-        label: g.message,
-        icon: GROUP_ICONS[g.key] ?? "🙂",
-        order: g.order,
-      })),
+      .map((g) => ({ key: g.key, label: g.message, order: g.order })),
   }));
   return catalog;
 }
 
-function readRecent(): string[] {
+function readStored(key: string): unknown {
   try {
-    const v: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(v)
-      ? v.filter((x): x is string => typeof x === "string").slice(0, RECENT_MAX)
-      : [];
+    return JSON.parse(localStorage.getItem(key) ?? "[]");
   } catch {
     return [];
   }
 }
-function rememberRecent(emoji: string) {
-  saveLocal(RECENT_KEY, [emoji, ...readRecent().filter((e) => e !== emoji)].slice(0, RECENT_MAX));
+const readUses = () => parseUses(readStored(USE_KEY));
+function readFrequent(): string[] {
+  const older = readStored(RECENT_KEY);
+  return frequentEmoji(
+    readUses(),
+    Array.isArray(older) ? older.filter((x): x is string => typeof x === "string") : [],
+  );
 }
 
-/** Searchable picker over every Unicode emoji, grouped by category, with a "recent" row. Calls `onPick` and leaves closing to the caller. */
+/** One category of the picker's tab row; the open one is underlined. */
+function CategoryTab({
+  label,
+  icon: Glyph,
+  current,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: Icon;
+  current: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <ActionHint label={label}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-current={current ? "true" : undefined}
+        disabled={disabled}
+        onClick={onClick}
+        className="flex h-8 w-7 items-center justify-center border-b-2 border-transparent text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40 aria-[current]:border-primary aria-[current]:text-foreground"
+      >
+        <Glyph aria-hidden="true" className="size-4" />
+      </button>
+    </ActionHint>
+  );
+}
+
+/**
+ * Searchable picker over every Unicode emoji, laid out as Slack's: category tabs, search, "Frequently used" and then each category.
+ * Calls `onPick` and leaves closing to the caller.
+ */
 export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
   const [data, setData] = useState<Catalog>();
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [hover, setHover] = useState<Emoji>();
-  const [recent] = useState(readRecent);
+  // Read once: the section must not reshuffle while the picker is open.
+  const [frequent] = useState(readFrequent);
+  const [active, setActive] = useState(FREQUENT);
   const scroller = useRef<HTMLDivElement>(null);
   const deferred = useDeferredValue(query.trim().toLowerCase());
   useEffect(() => {
@@ -104,26 +152,61 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
       ];
     }
     const byUnicode = new Map(data.emojis.map((e) => [e.unicode, e]));
-    const recents = recent.map((u) => byUnicode.get(u)).filter((e): e is Emoji => !!e);
+    const mine = frequent.map((u) => byUnicode.get(u)).filter((e): e is Emoji => !!e);
     return [
-      ...(recents.length ? [{ key: "recent", label: "Recently used", emojis: recents }] : []),
+      { key: FREQUENT, label: "Frequently used", emojis: mine },
       ...data.groups.map((g) => ({
         key: g.key,
         label: g.label,
         emojis: data.emojis.filter((e) => e.group === g.order),
       })),
     ];
-  }, [data, deferred, recent]);
+  }, [data, deferred, frequent]);
 
   const pick = (e: Emoji) => {
-    rememberRecent(e.unicode);
+    saveLocal(USE_KEY, countUse(readUses(), e.unicode));
     onPick(e.unicode);
   };
-  const jump = (key: string) =>
-    scroller.current?.querySelector(`[data-section="${key}"]`)?.scrollIntoView({ block: "start" });
+  const sectionsOnScreen = () => [
+    ...(scroller.current?.querySelectorAll<HTMLElement>("[data-section]") ?? []),
+  ];
+  const jump = (key: string) => {
+    const section = sectionsOnScreen().find((el) => el.dataset.section === key);
+    if (!section || !scroller.current) return;
+    // The list only: `scrollIntoView` would also move the page behind the panel.
+    scroller.current.scrollTop = section.offsetTop;
+    setActive(key);
+  };
+  // The tab follows the list: the last section whose top has passed.
+  const track = () => {
+    const top = scroller.current?.scrollTop ?? 0;
+    const passed = sectionsOnScreen().filter((el) => el.offsetTop <= top + 4);
+    setActive(passed.at(-1)?.dataset.section ?? FREQUENT);
+  };
 
   return (
     <div className="flex w-80 flex-col gap-2" role="dialog" aria-label="Emoji picker">
+      {data && (
+        <nav aria-label="Emoji categories" className="flex justify-between border-b">
+          <CategoryTab
+            label="Frequently used"
+            icon={ClockIcon}
+            current={!deferred && active === FREQUENT}
+            disabled={!!deferred}
+            onClick={() => jump(FREQUENT)}
+          />
+          {data.groups.map((g) => (
+            <CategoryTab
+              key={g.key}
+              label={g.label}
+              icon={GROUP_ICONS[g.key] ?? SmileyIcon}
+              current={!deferred && active === g.key}
+              disabled={!!deferred}
+              onClick={() => jump(g.key)}
+            />
+          ))}
+        </nav>
+      )}
       <Input
         // The picker opens in a Dropdown, which has no initial-focus prop: autoFocus keeps the focus manager from moving it elsewhere.
         autoFocus
@@ -134,27 +217,11 @@ export function EmojiPicker({ onPick }: { onPick: (emoji: string) => void }) {
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search emoji"
       />
-      {!deferred && data && (
-        <nav aria-label="Emoji categories" className="flex justify-between border-b pb-1">
-          {data.groups.map((g) => (
-            <ActionHint label={g.label}>
-              <button
-                key={g.key}
-                type="button"
-                aria-label={g.label}
-
-                onClick={() => jump(g.key)}
-                className="rounded px-1 text-base leading-7 grayscale hover:bg-accent hover:grayscale-0"
-              >
-                {g.icon}
-              </button>
-            </ActionHint>
-          ))}
-        </nav>
-      )}
       <div
         ref={scroller}
-        className="h-64 overflow-y-auto pr-1"
+        // `relative`: a section's `offsetTop` is then its place in this list.
+        className="relative h-64 overflow-y-auto pr-1"
+        onScroll={track}
         onMouseLeave={() => setHover(undefined)}
       >
         {!data && !failed && (

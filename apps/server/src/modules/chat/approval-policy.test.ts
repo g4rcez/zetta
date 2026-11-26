@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { writeMode, type WriteFacts } from "./approval-policy";
 
 const facts = (over: Partial<WriteFacts> = {}): WriteFacts => ({
+  shared: false,
   seenOutside: false,
   reach: true,
   place: "chat",
@@ -22,9 +23,14 @@ describe("writeMode", () => {
       for (const startedBy of ["user_message", "server"] as const)
         for (const reach of [true, false])
           for (const askedToKeep of [true, false])
-            expect(writeMode({ seenOutside: true, reach, place, startedBy, askedToKeep })).toBe(
-              "ask",
-            );
+            expect(
+              writeMode(facts({ seenOutside: true, reach, place, startedBy, askedToKeep })),
+            ).toBe("ask");
+  });
+
+  test("with someone else's bot taking part it always asks, even for a bot that reaches nothing", () => {
+    for (const reach of [true, false])
+      expect(writeMode(facts({ shared: true, reach, askedToKeep: true }))).toBe("ask");
   });
 
   test("a bot with no code access and no MCP applies everywhere: the server sees all it reads", () => {

@@ -214,9 +214,12 @@ export type Proposal = {
   expiresAt?: string;
   /** `hold`: the card widens what a bot may do, so Approve is a press-and-hold. Absent on old servers: a click. */
   confirm?: "hold" | "click";
+  /** The asking bot belongs to this person, not to the one answering: such a card is answered each time. */
+  sharedFrom?: string;
 };
-/** Whether a card offers "Always allow" and "Allow in this chat": its kind may be remembered, and a chief tool must not be on the never list. */
-export const canRememberProposal = (p: Pick<Proposal, "kind" | "patch">): boolean =>
+/** Whether a card offers "Always allow" and "Allow in this chat": its kind may be remembered, a chief tool must not be on the never list, and the bot must be the person's own. */
+export const canRememberProposal = (p: Pick<Proposal, "kind" | "patch" | "sharedFrom">): boolean =>
+  !p.sharedFrom &&
   !!p.kind &&
   REMEMBERABLE.includes(p.kind) &&
   !(p.kind === "chief_action" && NEVER_REMEMBERED_TOOLS.has(chiefKeyOf(p.patch)));

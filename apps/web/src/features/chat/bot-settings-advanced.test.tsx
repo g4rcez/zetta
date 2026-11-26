@@ -155,14 +155,14 @@ test("new bot wizard, simple view: the recommended engines show, the other engin
   expect(text).toContain("Recommended");
   const recommended = host.querySelector('input[name="harness"][value="claude-code"]')!;
   expect(recommended.closest("details")).toBeNull();
-  const unverified = foldOf(host, "Not fully verified");
-  expect(unverified!.open).toBe(false);
-  expect(foldOf(host, "Model")).toBe(unverified);
+  const others = foldOf(host, "More engines");
+  expect(others!.open).toBe(false);
+  expect(foldOf(host, "Model")).toBe(others);
 });
 
 test("new bot wizard, full view: they are open", async () => {
   const host = await mount("full", engine());
-  expect(foldOf(host, "Not fully verified")!.open).toBe(true);
+  expect(foldOf(host, "More engines")!.open).toBe(true);
 });
 
 test("the identity step has a Role field with its hint", async () => {

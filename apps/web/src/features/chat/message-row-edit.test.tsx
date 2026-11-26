@@ -102,18 +102,27 @@ test("the Up arrow picks the last message of the person, not a bot's reply", () 
   expect(lastEditable([])).toBeUndefined();
 });
 
-test("the toolbar offers Edit on the person's own message, only where the page can edit", () => {
-  const plain = mount({});
-  openToolbar(plain);
-  expect(plain.querySelector('button[aria-label="Edit"]')).toBeNull();
+/** Opens the "⋯" of the toolbar and answers the rows of its menu. */
+const openMenu = (host: HTMLElement) => {
+  openToolbar(host);
+  click(host.querySelector('button[aria-label="More actions"]'));
+  return [...win.document.querySelectorAll('[role="menuitem"]')];
+};
+const editRow = (rows: { textContent: string | null }[]) =>
+  rows.find((r) => r.textContent === "Edit");
+
+test("the menu offers Edit on the person's own message, only where the page can edit", () => {
+  expect(editRow(openMenu(mount({})))).toBeUndefined();
+  win.document.body.replaceChildren();
   const picked: string[] = [];
   const host = mount({ onEdit: (r: { id: string }) => picked.push(r.id) });
-  openToolbar(host);
-  click(host.querySelector('button[aria-label="Edit"]'));
+  click(editRow(openMenu(host)));
   expect(picked).toEqual(["m1"]);
+  win.document.body.replaceChildren();
   const reply = mount({ row: { ...(row as object), role: "assistant" }, onEdit: () => {} });
-  openToolbar(reply);
-  expect(reply.querySelector('button[aria-label="Edit"]')).toBeNull();
+  const rows = openMenu(reply);
+  expect(editRow(rows)).toBeUndefined();
+  expect(rows.map((r) => r.textContent)).toContain("Save to memory");
 });
 
 test("the message being edited shows the editor with Save and Cancel instead of its text", () => {

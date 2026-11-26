@@ -1,4 +1,3 @@
-import { engineMaturity } from "@zetta/core/maturity";
 import { HARNESSES } from "@zetta/harness/models";
 import type { Bot } from "./chat-client";
 
@@ -10,9 +9,7 @@ export const harnessOptions = HARNESSES.map((h) => ({
       ? "fixture (offline test)"
       : h === "decision"
         ? "decision (Laya/Jev, no tokens)"
-        : engineMaturity(h).level === "stable"
-          ? h
-          : `${h} (not verified yet)`,
+        : h,
 }));
 
 /** Fields copied when duplicating a bot. Only what the owner can see is available (non-owners get blank personality/instructions). */

@@ -3,7 +3,6 @@ import { Link } from "@tanstack/react-router";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowBendUpLeftIcon,
-  BookmarkSimpleIcon,
   BooksIcon,
   CalendarPlusIcon,
   AppWindowIcon,
@@ -14,16 +13,15 @@ import {
   ListChecksIcon,
   UsersIcon,
   ChatTextIcon,
-  DotsThreeIcon,
   PaperclipIcon,
-  PencilSimpleIcon,
+  PlusIcon,
   PushPinIcon,
   SmileyIcon,
 } from "@phosphor-icons/react";
 
 import { ActionHint } from "@/components/action-hint";
 import { IconHint } from "@/components/icon-hint";
-import { Button, Dropdown, Menu, MenuItem } from "@/components/ui";
+import { Button, Dropdown, DROPDOWN_PICKER } from "@/components/ui";
 import {
   Message,
   MessageAvatar,
@@ -38,15 +36,12 @@ import { UserAvatar } from "@/components/user-avatar";
 import { errorMessage, isImage, type Bot, type Receipt, type Revision } from "./chat-client";
 import { chatQueries } from "./chat-queries";
 import { PictureStrip } from "./attachment-image";
-import { CopyButton } from "./chat-copy";
-import { RateButtons, useFeedback } from "../bot-quality/feedback";
 import { EmojiPicker } from "./emoji-picker";
 import { computersOf, type Row } from "./chat-rows";
 import { elapsed, friendly, isGeneric, useNow, WorkTimeline } from "./work-timeline";
 import { VmCard } from "./vm-card";
-import { ListenButton } from "../voice/listen-button";
 import { SeenMark } from "./seen-mark";
-import { MoreActions } from "./message-actions";
+import { MoreActions, type MoreActionsProps } from "./message-actions";
 import { canEditRow, EditedMark, MessageEditor } from "./message-edit";
 import { useTouchScreen } from "./use-touch";
 import { PollCard } from "./poll-card";
@@ -180,14 +175,17 @@ function Sources({ row }: { row: Row }) {
   );
 }
 
-const QUICK_REACTIONS: { emoji: string; name: string }[] = [
-  { emoji: "👍", name: "Like" },
-  { emoji: "👎", name: "Dislike" },
-  { emoji: "❤️", name: "Love" },
-];
-
-/** Opens the full emoji set in a panel and reacts with the pick. The picker focuses its own search field. */
-function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
+/**
+ * Opens the full emoji set in a panel and reacts with the pick. The picker focuses its own search field. `toolbar`: the first button of
+ * the hover toolbar. `chips`: the small chip after a message's reactions.
+ */
+function ReactionPicker({
+  onReact,
+  placement,
+}: {
+  onReact: (emoji: string) => void;
+  placement: "toolbar" | "chips";
+}) {
   const [open, setOpen] = useState(false);
   return (
     <Dropdown
@@ -195,12 +193,26 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
       open={open}
       onChange={setOpen}
       aria-label="Add reaction"
+      className={DROPDOWN_PICKER}
       trigger={
-        <ActionHint label="Add reaction">
-          <Button size="icon-xs" variant="ghost" aria-label="Add reaction">
-            <SmileyIcon />
-          </Button>
-        </ActionHint>
+        placement === "toolbar" ? (
+          <ActionHint label="Add reaction">
+            <Button size="icon-xs" variant="ghost" aria-label="Add reaction">
+              <SmileyIcon />
+            </Button>
+          </ActionHint>
+        ) : (
+          <ActionHint label="Add reaction">
+            <button
+              type="button"
+              aria-label="Add reaction"
+              className="inline-flex h-6 items-center gap-0.5 rounded-full border bg-muted/50 px-2 text-muted-foreground hover:border-foreground/30 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <SmileyIcon aria-hidden="true" className="size-3.5" />
+              <PlusIcon aria-hidden="true" className="size-2.5" />
+            </button>
+          </ActionHint>
+        )
       }
     >
       <EmojiPicker
@@ -213,41 +225,19 @@ function ReactionPicker({ onReact }: { onReact: (emoji: string) => void }) {
   );
 }
 
-/** Floating Slack toolbar: quick reactions, the full emoji picker, quote, open the thread, pin, copy, edit, more. */
+/** Floating Slack toolbar: add a reaction, open the thread, quote, and "⋯" for everything else. */
 function HoverBar({
-  row,
-  inThread,
   entry,
-  onReact,
-  onReply,
-  onQuote,
-  pinned,
-  onPin,
-  onEdit,
-  onSaveToMemory,
-}: {
-  row: Row;
-  inThread: boolean;
+  ...actions
+}: Omit<MoreActionsProps, "placement"> & {
   /** "keyboard": the bar replaced the focused tab stop, so focus moves to its first button. */
   entry: "pointer" | "keyboard";
-  onReact: (emoji: string) => void;
-  onReply: () => void;
-  onQuote: (() => void) | undefined;
-  pinned: boolean;
-  onPin: (() => void) | undefined;
-  /** Only for a message the person may edit. */
-  onEdit: (() => void) | undefined;
-  onSaveToMemory: () => void;
 }) {
   const bar = useRef<HTMLDivElement>(null);
-  // Where the chat gives thumbs, 👍 and 👎 are ratings of the bot, not emoji reactions.
-  const rating = useFeedback();
-  const quick = rating
-    ? QUICK_REACTIONS.filter((r) => r.emoji !== "👍" && r.emoji !== "👎")
-    : QUICK_REACTIONS;
   useLayoutEffect(() => {
     if (entry === "keyboard") bar.current?.querySelector("button")?.focus();
   }, [entry]);
+  const { inThread, onReact, onReply, onQuote } = actions;
   return (
     <div
       ref={bar}
@@ -255,27 +245,7 @@ function HoverBar({
       aria-label="Message actions"
       className="absolute -top-4 right-(--chat-gutter) z-10 flex items-center rounded-lg border bg-popover p-0.5 opacity-0 shadow-sm transition-opacity group-hover/message:opacity-100 group-focus-within/message:opacity-100 has-aria-expanded:opacity-100 [@media(hover:none)]:hidden"
     >
-      <RateButtons row={row} />
-      {quick.map(({ emoji, name }) => (
-        <ActionHint key={emoji} label={name}>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`React with ${name}`}
-            onClick={() => onReact(emoji)}
-          >
-            <span className="text-sm leading-none">{emoji}</span>
-          </Button>
-        </ActionHint>
-      ))}
-      <ReactionPicker onReact={onReact} />
-      {onQuote && (
-        <ActionHint label="Quote">
-          <Button size="icon-xs" variant="ghost" aria-label="Quote" onClick={onQuote}>
-            <ArrowBendUpLeftIcon />
-          </Button>
-        </ActionHint>
-      )}
+      <ReactionPicker placement="toolbar" onReact={onReact} />
       {!inThread && (
         <ActionHint label="Open thread">
           <Button size="icon-xs" variant="ghost" aria-label="Open thread" onClick={onReply}>
@@ -283,49 +253,14 @@ function HoverBar({
           </Button>
         </ActionHint>
       )}
-      {onPin && (
-        <ActionHint label={pinned ? "Unpin" : "Pin"}>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={pinned ? "Unpin" : "Pin"}
-            onClick={onPin}
-          >
-            <PushPinIcon weight={pinned ? "fill" : "regular"} />
+      {onQuote && (
+        <ActionHint label="Quote">
+          <Button size="icon-xs" variant="ghost" aria-label="Quote" onClick={onQuote}>
+            <ArrowBendUpLeftIcon />
           </Button>
         </ActionHint>
       )}
-      <CopyButton text={row.content} label="Copy message" className="!size-7 [&_svg]:!size-3.5" />
-      {row.role === "assistant" && !row.streaming && (
-        <ListenButton id={row.id} text={row.content} botId={row.botId ?? undefined} />
-      )}
-      {onEdit && (
-        <ActionHint label="Edit">
-          <Button size="icon-xs" variant="ghost" aria-label="Edit" onClick={onEdit}>
-            <PencilSimpleIcon />
-          </Button>
-        </ActionHint>
-      )}
-      {row.role === "assistant" && (
-        <Menu
-          asChild
-          hover={false}
-          title=""
-          floatingClassName="min-w-44"
-          label={
-            <ActionHint label="More actions">
-              <Button size="icon-xs" variant="ghost" aria-label="More actions">
-                <DotsThreeIcon />
-              </Button>
-            </ActionHint>
-          }
-        >
-          <MenuItem title="Save to memory" onClick={onSaveToMemory}>
-            <BookmarkSimpleIcon />
-            Save to memory
-          </MenuItem>
-        </Menu>
-      )}
+      <MoreActions placement="toolbar" {...actions} />
     </div>
   );
 }
@@ -619,6 +554,11 @@ export const MessageRow = memo(function MessageRow({
   const computers = computersOf(row);
   const replies = row.replyCount ?? 0;
   const poll = row.meta?.poll;
+  const seen = row.role === "user" && row.seenBy?.length ? <SeenMark botIds={row.seenBy} /> : null;
+  const text =
+    poll && body === pollBody(poll) ? null : (
+      <Response text={body} streaming={working} repo={repo} />
+    );
   return (
     <Message
       id={`message-${row.id}`}
@@ -714,6 +654,7 @@ export const MessageRow = memo(function MessageRow({
                 <PushPinIcon weight="fill" className="size-3 text-primary" />
               </IconHint>
             )}
+            {seen}
           </MessageHeader>
         )}
         <PictureStrip pics={(row.attachments ?? []).filter(isImage)} />
@@ -748,8 +689,14 @@ export const MessageRow = memo(function MessageRow({
           />
         ) : (
           <>
-            {poll && body === pollBody(poll) ? null : (
-              <Response text={body} streaming={working} repo={repo} />
+            {continued && seen ? (
+              // A follow-up message has no name line: the mark sits right after its text, centered on the last line.
+              <div className="flex items-end gap-2">
+                {text}
+                <span className="flex h-(--chat-leading) shrink-0 items-center">{seen}</span>
+              </div>
+            ) : (
+              text
             )}
             {poll && (
               <PollCard
@@ -1000,6 +947,7 @@ export const MessageRow = memo(function MessageRow({
                   <span className="font-medium tabular-nums">{r.count}</span>
                 </button>
               ))}
+            {saved && <ReactionPicker placement="chips" onReact={(e) => onReact(row, e)} />}
           </div>
         )}
         {!inThread && replies > 0 && (
@@ -1017,7 +965,6 @@ export const MessageRow = memo(function MessageRow({
         {continued && row.editedAt && (
           <EditedMark row={row} load={editable ? loadRevisions : undefined} />
         )}
-        {row.role === "user" && row.seenBy?.length ? <SeenMark botIds={row.seenBy} /> : null}
       </MessageContent>
     </Message>
   );

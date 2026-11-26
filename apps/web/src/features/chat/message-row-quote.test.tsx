@@ -110,21 +110,33 @@ test("a person's message shows who has read it, and a bot's reply never does", (
   expect(reply.querySelector('[aria-label^="Read by"]')).toBeNull();
 });
 
+test("the read mark takes no line of its own: beside the name, or after the text of a follow-up", () => {
+  const mark = '[aria-label="Read by A bot"]';
+  const named = mount({ row: { ...(row as object), seenBy: ["b1"] } });
+  expect(named.querySelector(`[data-slot="message-header"] ${mark}`)).not.toBeNull();
+  expect(named.querySelectorAll(mark)).toHaveLength(1);
+  const followUp = mount({ row: { ...(row as object), seenBy: ["b1"] }, continued: true });
+  const beside = followUp.querySelector(".chat-response")!.parentElement!;
+  expect(beside.className).toContain("flex");
+  expect(beside.querySelector(mark)).not.toBeNull();
+  expect(followUp.querySelectorAll(mark)).toHaveLength(1);
+});
+
 test("the toolbar offers Pin where the page can pin, and Unpin on a pinned message", () => {
   const picked: [string, boolean][] = [];
   const plain = mount({});
   openToolbar(plain);
   expect(plain.querySelector('button[aria-label="Pin"]')).toBeNull();
   const host = mount({ onPin: (r: { id: string }, pin: boolean) => picked.push([r.id, pin]) });
-  openToolbar(host);
-  act(() => (host.querySelector('button[aria-label="Pin"]') as unknown as HTMLElement).click());
+  openMenu(host);
+  chooseRow("Pin");
   const pinned = mount({
     pinned: true,
     onPin: (r: { id: string }, pin: boolean) => picked.push([r.id, pin]),
   });
-  openToolbar(pinned);
-  expect(pinned.querySelector('button[aria-label="Pin"]')).toBeNull();
-  act(() => (pinned.querySelector('button[aria-label="Unpin"]') as unknown as HTMLElement).click());
+  openMenu(pinned);
+  expect(menuRows()).not.toContain("Pin");
+  chooseRow("Unpin");
   expect(picked).toEqual([
     ["m2", true],
     ["m2", false],
@@ -191,6 +203,45 @@ const openToolbar = (host: HTMLElement) =>
   act(() => {
     (host.querySelector('button[aria-label="Message actions"]') as unknown as HTMLElement).focus();
   });
+
+/** The "⋯" of the toolbar, and the rows of the menu it opens. */
+const openMenu = (host: HTMLElement) => {
+  // The one tab stop is gone once the toolbar is up.
+  if (host.querySelector('button[aria-label="Message actions"]')) openToolbar(host);
+  act(() =>
+    (host.querySelector('button[aria-label="More actions"]') as unknown as HTMLElement).click(),
+  );
+};
+// The latest menu: one opened by an earlier mount may still be in the document.
+const menuItems = () => [
+  ...([...win.document.querySelectorAll('[role="menu"]')]
+    .at(-1)
+    ?.querySelectorAll('[role="menuitem"]') ?? []),
+];
+const menuRows = () => menuItems().map((b) => b.textContent);
+const chooseRow = (name: string) =>
+  act(() => (menuItems().find((b) => b.textContent === name) as unknown as HTMLElement).click());
+
+test("the toolbar has four buttons; everything else is in the menu", () => {
+  const host = mount({ onQuote: () => {}, onPin: () => {} });
+  openToolbar(host);
+  const names = [...host.querySelectorAll('[role="toolbar"] button')].map((b) =>
+    b.getAttribute("aria-label"),
+  );
+  expect(names).toEqual(["Add reaction", "Open thread", "Quote", "More actions"]);
+  openMenu(host);
+  expect(menuRows()).toEqual(["Pin", "Copy"]);
+});
+
+test("a message with reactions ends with a chip that adds another", () => {
+  const chips = '[role="group"][aria-label="Reactions"] button[aria-label="Add reaction"]';
+  const reactions = [{ emoji: "🎉", count: 2, mine: false }];
+  const host = mount({ row: { ...(row as object), reactions } });
+  expect(host.querySelector(chips)).not.toBeNull();
+  expect(mount({}).querySelector(chips)).toBeNull();
+  const readOnly = mount({ row: { ...(row as object), reactions }, readOnly: true });
+  expect(readOnly.querySelector(chips)).toBeNull();
+});
 
 test("the toolbar offers Quote only where the page can quote", () => {
   const withQuote = mount({ onQuote: () => {} });

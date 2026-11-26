@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -74,6 +74,19 @@ describe("live steps", () => {
     await writeFile(join(dir, "5-1.cmd"), "eval something-else");
     await endStep(run, "t1");
     expect(run.steps.get("t1")?.file).toBe(join(dir, "5-1.out"));
+  });
+
+  // The folder is mounted into the bot's container, so the bot can put a link where the server reads.
+  test.skipIf(process.platform === "win32")("a link in the folder is never read", async () => {
+    const dir = await root();
+    const host = join(await root(), "secret");
+    await writeFile(host, "HOST_SECRET\n");
+    const run = openLiveRun(undefined, dir, []);
+    beginStep(run, "t1", "cat notes");
+    await writeFile(join(dir, "7-1.cmd"), "eval 'cat notes' && pwd -P >| /tmp/c");
+    await symlink(host, join(dir, "7-1.out"));
+    await endStep(run, "t1");
+    expect(await collect(followStep(run, run.steps.get("t1")!, undefined, { pollMs: 5 }))).toBe("");
   });
 
   test("a step is found through the abort signal of its turn", async () => {

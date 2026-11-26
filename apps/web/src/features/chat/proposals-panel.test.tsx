@@ -134,6 +134,21 @@ test("a card that widens what a bot may do asks for a hold, and says when it exp
   await unmount();
 });
 
+test("a card of a bot someone else owns says whose it is and is answered each time", async () => {
+  const { host, unmount } = await render({
+    id: "p-shared",
+    kind: "bot_action",
+    botId: ASKER,
+    proposedByBotId: ASKER,
+    sharedFrom: "Ana",
+    diff: [{ field: "task", from: null, to: "task add" }],
+  });
+  expect(host.textContent).toContain("Ana’s bot");
+  expect(host.textContent).toContain("Approve");
+  expect(host.textContent).not.toContain("Always allow");
+  await unmount();
+});
+
 test("a card that asks for a click keeps its Approve button", async () => {
   const { host, unmount } = await render({
     id: "p5",

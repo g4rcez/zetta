@@ -12,6 +12,8 @@
  * skills from outside and host code are cards in every mode.
  */
 export type WriteFacts = {
+  /** A bot someone else owns takes part (see shared-bot-policy.ts): nothing it asks for is the person's consent. */
+  shared: boolean;
   /** The server saw outside content in this turn: an attachment, a tool result, an inbound message, an outside event. */
   seenOutside: boolean;
   /** The bot runs with code access or MCP servers, so it may have read content the server did not see. */
@@ -28,7 +30,7 @@ export type WriteFacts = {
 };
 
 export function writeMode(f: WriteFacts): "apply" | "ask" {
-  if (f.seenOutside) return "ask";
+  if (f.shared || f.seenOutside) return "ask";
   // Without code access or MCP the server sees everything the bot reads: nothing unseen can have steered it.
   if (!f.reach) return "apply";
   // Loops and rooms run turn after turn without the person; outside people write the inbound chats.

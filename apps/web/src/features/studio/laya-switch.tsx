@@ -14,6 +14,7 @@ import {
 } from "../onboarding/installation-api";
 import { LAYA_LOCALES } from "./laya-locales";
 import { LanguagePicker } from "./language-picker";
+import { isRootIdentity } from "@/lib/identity-client";
 
 /** The builtin Laya model setting of this installation; `undefined` while it loads. */
 export function useLayaMode(): Installation["laya"] | undefined {
@@ -57,7 +58,7 @@ export function LayaSwitch({
 }) {
   const { data: saved } = useQuery(installationQueries.get());
   const { data: identity } = useQuery(identityQueries.status());
-  const admin = identity?.state === "active" && identity.isAdmin;
+  const admin = isRootIdentity(identity);
   const [enabled, setEnabled] = useState(false);
   const [languages, setLanguages] = useState<string[]>(["en"]);
   const [busy, setBusy] = useState(false);

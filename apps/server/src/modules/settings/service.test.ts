@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { tenant } from "@zetta/db";
 import { AccessError, type ActiveActor } from "../identity/access";
 import { createSettingsService, SettingsError, type SettingChange } from "./service";
 import { createMemorySettingsStore } from "./testing";
@@ -119,6 +120,56 @@ describe("who may", () => {
     expect(await settings.get("harnessMax")).toBe(8);
   });
 
+  test("a workspace administrator who is not root changes what a workspace may have, and nothing of the whole server", async () => {
+    const { settings } = setup();
+    const workspaceAdmin = Object.freeze({
+      userId: "ws-admin",
+      isAdmin: true,
+      isRoot: false,
+      role: "admin",
+      workspaceId: ORG_A,
+    }) as ActiveActor;
+    // `lightRuns` is a workspace's to choose: the value is that workspace's, read by what runs there, and the server's stays as it was.
+    await settings.set(workspaceAdmin, "lightRuns", "on", { via: "person" });
+    expect(await tenant.run(ORG_A, () => settings.get("lightRuns"))).toBe("on");
+    expect(await settings.get("lightRuns")).toBe("off");
+    expect(await tenant.run(ORG_B, () => settings.get("lightRuns"))).toBe("off");
+    // Another workspace's value is not theirs to change.
+    await expect(
+      settings.set(workspaceAdmin, "lightRuns", "on", { via: "person", organizationId: ORG_B }),
+    ).rejects.toBeInstanceOf(AccessError);
+    await settings.unset(workspaceAdmin, "lightRuns", { via: "person" });
+    expect(await tenant.run(ORG_A, () => settings.get("lightRuns"))).toBe("off");
+    expect((await settings.list(workspaceAdmin)).settings.length).toBeGreaterThan(10);
+    // `harnessMax` is one number for the server, `codeAccess` is security policy: both are root's.
+    for (const [key, value] of [
+      ["harnessMax", 3],
+      ["hostRunner", "on"],
+      ["codeAccess", "on"],
+    ] as const) {
+      await expect(
+        settings.set(workspaceAdmin, key, value, { via: "person" }),
+      ).rejects.toMatchObject({ code: "ROOT_ONLY" });
+      await expect(settings.unset(workspaceAdmin, key, { via: "person" })).rejects.toMatchObject({
+        code: "ROOT_ONLY",
+      });
+    }
+    expect(await settings.get("harnessMax")).toBe(8);
+    // Naming their own workspace is the same as naming none; another's is refused.
+    await settings.set(workspaceAdmin, "lightRuns", "on", {
+      via: "person",
+      organizationId: ORG_A,
+    });
+    expect(await tenant.run(ORG_A, () => settings.get("lightRuns"))).toBe("on");
+    await expect(
+      settings.set(workspaceAdmin, "lightRuns", "on", { via: "person", organizationId: ORG_B }),
+    ).rejects.toBeInstanceOf(AccessError);
+    // Root changes all of it.
+    const root = Object.freeze({ userId: "root", isAdmin: true, isRoot: true }) as ActiveActor;
+    await settings.set(root, "harnessMax", 3, { via: "person" });
+    expect(await settings.get("harnessMax")).toBe(3);
+  });
+
   test("a bot or an MCP client cannot change a sensitive key; a person can", async () => {
     const { settings } = setup();
     for (const key of [
@@ -153,7 +204,7 @@ describe("list", () => {
     settings.invalidate(); // written behind the service's back, as another process would
     const { groups, settings: all } = await settings.list(admin);
     expect(Object.keys(groups)).toContain("limits");
-    expect(all.length).toBe(22);
+    expect(all.length).toBe(23);
     const by = Object.fromEntries(all.map((s) => [s.key, s]));
     expect(by.harnessMax).toMatchObject({
       value: 12,

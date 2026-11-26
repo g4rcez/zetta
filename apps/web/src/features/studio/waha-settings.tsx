@@ -12,6 +12,7 @@ import {
   type WahaTest,
 } from "../onboarding/installation-api";
 import { settingsApi, settingsQueries } from "./settings-api";
+import { isRootIdentity } from "@/lib/identity-client";
 
 const KEY_NOTE: Record<NonNullable<Installation["wahaKey"]>, string> = {
   none: "No key saved. Without one, Zetta calls the server with no key.",
@@ -210,7 +211,7 @@ export function WahaForm({
 export function WahaSettings() {
   const { data: saved } = useQuery(installationQueries.get());
   const { data: identity } = useQuery(identityQueries.status());
-  const admin = Boolean(identity?.state === "active" && identity.isAdmin);
+  const admin = isRootIdentity(identity);
   const { data: list } = useQuery({ ...settingsQueries.list(), enabled: admin });
   if (!saved) return null;
   const address = list?.settings.find((s) => s.key === "wahaUrl");

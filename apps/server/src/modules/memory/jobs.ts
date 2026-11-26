@@ -17,6 +17,7 @@ import { MemoryError, type Memory } from "./service";
 import { sanitize, type MemoryScreen } from "./screen";
 import { runMemoryTool } from "./tool";
 import { readSetting, type SettingsReader } from "../settings/service";
+import { chiefFor } from "../workspaces/chief";
 
 type Job = typeof memoryJob.$inferSelect;
 /** The same turn runner the chat uses (chat/pipeline.ts), so the bot answers with its own engine, personality and memory. */
@@ -173,10 +174,7 @@ export function createMemoryJobs(
    * the background. One open review per owner and group.
    */
   async function requestReview(owner: string, problem: MemoryProblem = "all") {
-    const [chief] = await db
-      .select({ id: bot.id })
-      .from(bot)
-      .where(and(eq(bot.ownerUserId, owner), eq(bot.kind, "chief"), eq(bot.archived, false)));
+    const chief = await chiefFor(db, owner);
     if (!chief || !chat) throw new MemoryError("NOT_FOUND");
     const [open] = await db
       .select()
@@ -479,14 +477,14 @@ export function createMemoryJobs(
    */
   async function requestIngest(owner: string, input: IngestInput, botId?: string) {
     if (!chat || !deps.screen) throw new IngestError("NO_ENGINE");
-    const [b] = await db
-      .select()
-      .from(bot)
-      .where(
-        botId
-          ? and(eq(bot.id, botId), eq(bot.ownerUserId, owner), eq(bot.archived, false))
-          : and(eq(bot.ownerUserId, owner), eq(bot.kind, "chief"), eq(bot.archived, false)),
-      );
+    const b = botId
+      ? (
+          await db
+            .select()
+            .from(bot)
+            .where(and(eq(bot.id, botId), eq(bot.ownerUserId, owner), eq(bot.archived, false)))
+        )[0]
+      : await chiefFor(db, owner);
     if (!b || b.harness === "fixture" || b.harness === "decision")
       throw new IngestError("NO_ENGINE");
     const { rows } = await db.$client.query(

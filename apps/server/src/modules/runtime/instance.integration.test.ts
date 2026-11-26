@@ -63,6 +63,8 @@ describe.skipIf(!url)("server instances and owner-scoped recovery", () => {
   async function seed(owners: (string | null)[]) {
     // One conversation per row: the unique index allows one running row per conversation. Foreign keys are skipped (no users here).
     await db.transaction(async (tx) => {
+      // Skipping foreign keys takes the login (a superuser in tests), not the app's role (packages/db/src/index.ts).
+      await tx.execute(sql`set local role none`);
       await tx.execute(sql`set local session_replication_role = replica`);
       for (const [i, owner] of owners.entries())
         await tx.execute(sql`insert into zetta.chat_queue (id, owner_user_id, conversation_id, message_id, status, owner_instance)

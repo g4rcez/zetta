@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { boolean, check, index, integer, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 
@@ -23,6 +24,7 @@ export type OutputStyleScope = (typeof OUTPUT_STYLE_SCOPES)[number];
 export const outputStyle = zetta.table(
   "output_style",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

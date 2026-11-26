@@ -1,4 +1,6 @@
 import type { Database } from "@zetta/db";
+import { tenant } from "@zetta/db";
+import { boundTo } from "../workspaces/each";
 import { and, eq } from "@zetta/db/query";
 import { bot, conversation } from "@zetta/db/schema/chat";
 import type { VoiceEndReason } from "@zetta/db/schema/voice";
@@ -163,6 +165,17 @@ export function createVoiceService(deps: VoiceDeps) {
       socket.close(CLOSE.badTicket, "This link to the call is no longer valid.");
       return null;
     }
+    // The socket's callbacks run outside the request that made the ticket: the call works in that person's workspace.
+    const workspaceId = info.actor.workspaceId;
+    if (!workspaceId) return start(info, socket);
+    const handle = await tenant.run(workspaceId, () => start(info, socket));
+    return handle && boundTo(workspaceId, handle);
+  }
+
+  async function start(
+    info: NonNullable<ReturnType<typeof tickets.redeem>>,
+    socket: VoiceSocket,
+  ): Promise<VoiceCallHandle | null> {
     const userId = info.actor.userId;
     // One call per person: the new one ends the old one.
     await live.get(userId)?.end("replaced");

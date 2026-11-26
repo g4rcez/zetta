@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { tenant } from "@zetta/db";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, gt, lte, sql } from "@zetta/db/query";
 import { routine, routineRun, routineTrigger } from "@zetta/db/schema/features";
@@ -304,7 +305,11 @@ export function createRoutineTriggers(db: Database, fire: FireEvent) {
      * MAX_RUNS_PER_HOUR runs in the last hour (counted before anything starts, so a refused call starts nothing). `off`: the secret is right but the routine is paused. A repeated `key` returns the same run.
      */
     async receive(triggerId: string, secret: string, key: string | null, body: unknown) {
-      const [t] = await db.select().from(routineTrigger).where(eq(routineTrigger.id, triggerId));
+      // A call from outside names no workspace: the trigger is found across them, and only once its secret is proven does the call work
+      // in the trigger's own.
+      const [t] = await tenant.scan(() =>
+        db.select().from(routineTrigger).where(eq(routineTrigger.id, triggerId)),
+      );
       const expected =
         t?.kind === "webhook" && t.secretHash ? Buffer.from(t.secretHash, "hex") : null;
       const given = hash(secret);
@@ -312,6 +317,7 @@ export function createRoutineTriggers(db: Database, fire: FireEvent) {
       const ok =
         timingSafeEqual(expected ?? Buffer.alloc(given.length), given) && expected !== null;
       if (!t || !ok || t.status !== "active") return { status: "invalid" as const };
+      tenant.claim(t.workspaceId);
       const [{ n } = { n: 0 }] = await db
         .select({ n: sql<number>`count(*)::int` })
         .from(routineRun)

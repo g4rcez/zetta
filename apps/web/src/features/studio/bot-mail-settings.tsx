@@ -12,6 +12,7 @@ import {
   type MailSettingsPatch,
   type MailTest,
 } from "../onboarding/installation-api";
+import { isRootIdentity } from "@/lib/identity-client";
 
 type Provider = NonNullable<Installation["mailProvider"]>;
 const PROVIDER_OPTIONS: { value: Provider; label: string }[] = [
@@ -294,7 +295,7 @@ export function BotMailForm({
 export function BotMailSettings() {
   const { data: saved } = useQuery(installationQueries.get());
   const { data: identity } = useQuery(identityQueries.status());
-  const admin = Boolean(identity?.state === "active" && identity.isAdmin);
+  const admin = isRootIdentity(identity);
   if (!saved) return null;
   return (
     <BotMailForm

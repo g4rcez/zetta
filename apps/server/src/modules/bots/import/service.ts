@@ -1,6 +1,5 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq } from "@zetta/db/query";
-import { bot } from "@zetta/db/schema/chat";
+import { and, eq } from "@zetta/db/query";
 import { skill } from "@zetta/db/schema/skills";
 
 import type { BotInput } from "../../chat/service";
@@ -16,6 +15,7 @@ import { createGrokSource, type GrokListItem, type GrokSource } from "./grok-sou
 import { matchIntegrations } from "./integrations-match";
 import { createInstaller, type InstallResult } from "./install";
 import { describeGrokSchedule, scheduleFromRoutine } from "./schedule-from-cron";
+import { chiefFor } from "../../workspaces/chief";
 
 /**
  * Importing a bot from the Grok Bot marketplace, as one service: browse, preview, analyze (the person's Chief writes the missing
@@ -70,13 +70,8 @@ export function createBotImport(deps: BotImportDeps): BotImport {
   const analyzer = deps.analyzer ?? createAnalyzerFor(db);
 
   const chiefOf = async (owner: string) => {
-    const [chief] = await db
-      .select({ harness: bot.harness, model: bot.model })
-      .from(bot)
-      .where(and(eq(bot.ownerUserId, owner), eq(bot.kind, "chief"), eq(bot.archived, false)))
-      .orderBy(asc(bot.createdAt))
-      .limit(1);
-    return chief ?? null;
+    const chief = await chiefFor(db, owner);
+    return chief ? { harness: chief.harness, model: chief.model } : null;
   };
 
   const installer = createInstaller({

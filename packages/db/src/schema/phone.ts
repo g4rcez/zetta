@@ -8,6 +8,7 @@ import {
   PHONE_NUMBER_PROVIDERS,
 } from "@zetta/core/phone";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot } from "./chat";
@@ -28,6 +29,7 @@ const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
 export const phoneNumber = zetta.table(
   "phone_number",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

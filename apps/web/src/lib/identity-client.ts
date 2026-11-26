@@ -1,3 +1,4 @@
+import { type InviteRole, WORKSPACE_ROLES } from "@zetta/core/workspace";
 import z from "zod";
 
 import { serverOrigin } from "@/lib/server-origin";
@@ -7,7 +8,20 @@ const identifier = z.string().min(1);
 export const identityStatusSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("anonymous") }).strict(),
   z.object({ state: z.literal("unenrolled"), userId: identifier }).strict(),
-  z.object({ state: z.literal("active"), userId: identifier, isAdmin: z.boolean() }).strict(),
+  z
+    .object({
+      state: z.literal("active"),
+      userId: identifier,
+      /** Administers their workspace: its owner or one of its administrators. */
+      isAdmin: z.boolean(),
+      /** The one person who set this server up. What belongs to the whole server is theirs alone to change. */
+      isRoot: z.boolean().optional(),
+      workspaceId: identifier.optional(),
+      role: z.enum(WORKSPACE_ROLES).optional(),
+      /** The person lost their workspace (removed, suspended, deleted) and works in none. */
+      place: z.enum(["nowhere"]).optional(),
+    })
+    .strict(),
 ]);
 const invitationSchema = z
   .object({
@@ -33,9 +47,23 @@ const pendingInvitationsSchema = z
 const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string() }) });
 
 export type IdentityStatus = z.infer<typeof identityStatusSchema>;
+
+/**
+ * True for the person who set this server up. What belongs to the whole server is theirs alone to change: its settings, the keys of its
+ * own services, its updates. An answer that carries no `isRoot` comes from a server with one administrator, who is that person.
+ */
+export const isRootIdentity = (identity: IdentityStatus | undefined): boolean =>
+  identity?.state === "active" && (identity.isRoot ?? identity.isAdmin);
 export type IssuedInvitation = z.infer<typeof invitationSchema>;
 export type PendingInvitation = z.infer<typeof pendingInvitationsSchema>["invitations"][number];
-export type InvitationInput = { intendedEmail: string; intendedUserId?: string };
+export type InvitationInput = {
+  intendedEmail: string;
+  intendedUserId?: string;
+  /** What the person will be in the workspace. Left out: a member. */
+  role?: InviteRole;
+  /** One of the inviter's own bots, which becomes the new person's Chief. */
+  chiefBotId?: string;
+};
 export type SignUpInput = {
   name: string;
   email: string;

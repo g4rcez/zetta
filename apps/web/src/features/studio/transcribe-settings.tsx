@@ -12,6 +12,7 @@ import {
   type TranscribeSettingsPatch,
   type TranscribeTest,
 } from "../onboarding/installation-api";
+import { isRootIdentity } from "@/lib/identity-client";
 
 const PROVIDER_OPTIONS: { value: TranscribeProvider; label: string }[] = [
   { value: "off", label: "Off (no recording or voice note is turned into text)" },
@@ -335,7 +336,7 @@ export function TranscribeForm({
 export function TranscribeSettings() {
   const { data: saved } = useQuery(installationQueries.get());
   const { data: identity } = useQuery(identityQueries.status());
-  const admin = Boolean(identity?.state === "active" && identity.isAdmin);
+  const admin = isRootIdentity(identity);
   if (!saved) return null;
   return (
     <TranscribeForm

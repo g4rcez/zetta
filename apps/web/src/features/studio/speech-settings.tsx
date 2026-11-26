@@ -17,6 +17,7 @@ import {
   type SpeechSettingsPatch,
   type SpeechTest,
 } from "../onboarding/installation-api";
+import { isRootIdentity } from "@/lib/identity-client";
 
 const PROVIDER_OPTIONS: { value: SpeechProvider; label: string }[] = [
   { value: "browser", label: "The browser's own voice (nothing is sent anywhere)" },
@@ -366,7 +367,7 @@ export function SpeechForm({
 export function SpeechSettings() {
   const { data: saved } = useQuery(installationQueries.get());
   const { data: identity } = useQuery(identityQueries.status());
-  const admin = Boolean(identity?.state === "active" && identity.isAdmin);
+  const admin = isRootIdentity(identity);
   if (!saved) return null;
   return (
     <SpeechForm

@@ -1,4 +1,9 @@
-import { HeadContent, Outlet, createRootRouteWithContext } from "@tanstack/react-router";
+import {
+  HeadContent,
+  Outlet,
+  createRootRouteWithContext,
+  retainSearchParams,
+} from "@tanstack/react-router";
 import type { QueryClient } from "@tanstack/react-query";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 
@@ -9,16 +14,26 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ModalConfirmProvider } from "@/components/ui";
 import { PreferencesProvider } from "@/features/preferences/preferences";
 import { NotificationsProvider } from "@/lib/notify";
+import { workspaceOf, workspaceScope } from "@/lib/workspace-scope";
 
 import logoUrl from "../assets/logo.svg?url";
 import "../index.css";
-import { Fragment } from "react";
+import { Fragment, useEffect } from "react";
 
 export interface RouterAppContext {
   queryClient: QueryClient;
 }
 
+/** The workspace this tab works in, by its slug (lib/workspace-scope.ts). Absent: the person's own. */
+export type WorkspaceSearch = { w?: string };
+
 export const Route = createRootRouteWithContext<RouterAppContext>()({
+  // Every page keeps it: a link inside the app stays in the workspace of the tab it was followed in.
+  validateSearch: (search: Record<string, unknown>): WorkspaceSearch => {
+    const w = workspaceOf(new URLSearchParams(typeof search.w === "string" ? { w: search.w } : {}));
+    return w ? { w } : {};
+  },
+  search: { middlewares: [retainSearchParams(["w"])] },
   component: RootComponent,
   head: () => ({
     meta: [
@@ -51,6 +66,12 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
 
 function RootComponent() {
   const { signedIn, shell } = useRouteChrome();
+  const { w } = Route.useSearch();
+  const { queryClient } = Route.useRouteContext();
+  // Another workspace: every call says so from now on, and nothing loaded for the one before is shown in it.
+  useEffect(() => {
+    if (workspaceScope.set(w)) void queryClient.resetQueries();
+  }, [w, queryClient]);
   return (
     <Fragment>
       <HeadContent />

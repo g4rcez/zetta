@@ -3,7 +3,7 @@ import type { Database } from "@zetta/db";
 import { eq } from "@zetta/db/query";
 import { account, session, user } from "@zetta/db/schema/auth";
 import { installationIdentity } from "@zetta/db/schema/identity";
-import { createAdminLifecycleService } from "./admin-lifecycle";
+import { type AdminLifecycleHooks, createAdminLifecycleService } from "./admin-lifecycle";
 import { matchesConnectionKey } from "./setup-key";
 
 /** Setup is open until an installation (admin) row exists. */
@@ -22,8 +22,9 @@ export function createSetupState(db: Pick<Database, "select">) {
 export function createFirstAccountSetup(
   db: Pick<Database, "select" | "transaction" | "delete">,
   connectionKey: string,
+  hooks: AdminLifecycleHooks = {},
 ): FirstAccountSetup {
-  const admin = createAdminLifecycleService(db);
+  const admin = createAdminLifecycleService(db, hooks);
   return {
     isOpen: createSetupState(db),
     verifyKey: (candidate) => matchesConnectionKey(candidate, connectionKey),

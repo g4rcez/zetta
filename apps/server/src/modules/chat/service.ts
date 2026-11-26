@@ -85,6 +85,7 @@ import {
   type McpRun,
   type NativeHarness,
   type RunCli,
+  type OnAccount,
 } from "./harness";
 import {
   imagePath,
@@ -287,6 +288,7 @@ import { APP_ERRORS, AppError } from "../apps/service";
 import type { Playground } from "../playground/service";
 import { PLAYGROUND_ERRORS, PlaygroundError } from "../playground/types";
 import type { Learning } from "../learning";
+import { chiefFor, sharedChiefIds, sharedChiefOf } from "../workspaces/chief";
 
 /** Why a desktop credential fill typed nothing, for the user and the bot. */
 /** Plugin failures the person can fix in a setup card: not signed in, not configured, or a permission not granted. */
@@ -1465,12 +1467,7 @@ export function createChatService(
           browserResults.push(`permission: ${parsed.error.issues[0]?.message ?? "invalid rule"}`);
           continue;
         }
-        const [chief] = await db
-          .select()
-          .from(bot)
-          .where(
-            and(eq(bot.ownerUserId, actor.userId), eq(bot.kind, "chief"), eq(bot.archived, false)),
-          );
+        const chief = await chiefFor(db, actor.userId);
         if (!chief) {
           browserResults.push("permission: there is no chief to ask. Tell the user instead.");
           continue;
@@ -1510,12 +1507,7 @@ export function createChatService(
           );
           continue;
         }
-        const [chief] = await db
-          .select()
-          .from(bot)
-          .where(
-            and(eq(bot.ownerUserId, actor.userId), eq(bot.kind, "chief"), eq(bot.archived, false)),
-          );
+        const chief = await chiefFor(db, actor.userId);
         const stoppedIn = scope?.origin?.conversationId ?? conversationId;
         if (!chief || !stoppedIn) {
           browserResults.push("escalate: there is no chief to ask. Tell the user instead.");
@@ -4735,6 +4727,8 @@ export function createChatService(
         : undefined;
     // Set when the bot's main harness was blocked and its fallback harness answered this turn.
     let fallback: FallbackUse | undefined;
+    // The engine the last run of this reply used and its agent account: a person may run this bot on another engine than its owner's.
+    let ranOn: Parameters<OnAccount>[0] | undefined;
     // Token counts of every Claude Code process of this reply (the first answer, tool rounds, corrections, retries).
     const usage = noUsage();
     let measured = false;
@@ -4899,6 +4893,10 @@ export function createChatService(
             for await (const chunk of run.stream({
               userId: actor.userId,
               bot: who,
+              room: Boolean(a.scope?.discussionId),
+              onAccount: (used) => {
+                ranOn = used;
+              },
               history: a.hist,
               prompt: liveRead.length ? `${a.prompt}\n\n${earlyBlock(liveRead)}` : a.prompt,
               parentMessageId: a.historyRoot !== undefined ? a.historyRoot : a.parentMessageId,
@@ -5296,7 +5294,11 @@ export function createChatService(
       subjectId: saved!.id,
       outcome:
         status === "complete" ? "ok" : status === "cancelled" ? "cancelled" : outcomeOf(errCode),
-      detail: fallback?.to ?? who.harness,
+      detail: fallback?.to ?? ranOn?.harness ?? who.harness,
+      accountId: ranOn?.accountId ?? null,
+      // Only when someone else's account paid: the owner of a bot shared in a room, or of a shared Chief.
+      payerUserId:
+        ranOn?.ownerUserId && ranOn.ownerUserId !== actor.userId ? ranOn.ownerUserId : null,
       ...(measured ? { usage } : {}),
       // `runStart` has a second of slack taken off; the run itself started when this reply's row was made.
       durationMs: Date.now() - (runStart + 1000),
@@ -5353,8 +5355,13 @@ export function createChatService(
     }
     return { chosen, skipped };
   }
+  /** A person's own bots, the team's, and the one bot someone shared with them as their Chief (which may be private to its owner). */
   const visibleBot = (actor: ActiveActor) =>
-    or(eq(bot.ownerUserId, actor.userId), eq(bot.visibility, "team"));
+    or(
+      eq(bot.ownerUserId, actor.userId),
+      eq(bot.visibility, "team"),
+      inArray(bot.id, sharedChiefIds(db, actor.userId)),
+    );
 
   async function loadVisibleBot(actor: ActiveActor, botId: string) {
     const [row] = await db
@@ -6469,6 +6476,11 @@ export function createChatService(
     expireProposals,
     harnessReadiness: (userId: string) => harnessReadiness(db, userId),
     async ensureChief(actor: ActiveActor) {
+      // A person who stands in no workspace (theirs was deleted or suspended) gets no Chief: there is nowhere to keep one.
+      if (actor.place === "nowhere") return undefined;
+      // A person whose Chief is a bot someone shared with them gets no Chief of their own while that lasts.
+      const shared = await sharedChiefOf(db, actor.userId);
+      if (shared) return shared;
       const chief = async () =>
         (
           await db
@@ -6522,12 +6534,17 @@ export function createChatService(
         .from(bot)
         .where(and(visibleBot(actor), eq(bot.archived, false)))
         .orderBy(asc(bot.createdAt));
+      // `kind` in this list says what a bot is to the person who asks. A bot shared with them as their Chief is their chief, whatever it
+      // is to its owner, and a chief of their own from before is then one more bot of theirs.
+      const shared = (await sharedChiefOf(db, actor.userId))?.id;
+      const kindFor = (b: (typeof rows)[number]) =>
+        !shared ? b.kind : b.id === shared ? "chief" : "specialist";
       return rows.map((b) =>
         b.ownerUserId === actor.userId
-          ? b
+          ? { ...b, kind: kindFor(b) }
           : {
               id: b.id,
-              kind: b.kind,
+              kind: kindFor(b),
               visibility: b.visibility,
               folderId: null,
               name: b.name,
@@ -7489,6 +7506,8 @@ export function createChatService(
     async botSkills(actor: ActiveActor, botId: string) {
       return skillsOf(botClaudeStore, await loadVisibleBot(actor, botId));
     },
+    /** A bot the person can see and use (their own, the team's, or the one shared with them as their Chief), or NOT_FOUND. */
+    visibleBot: (actor: ActiveActor, botId: string) => loadVisibleBot(actor, botId),
     async createConversation(actor: ActiveActor, botId: string) {
       await loadVisibleBot(actor, botId);
       const [row] = await db

@@ -10,7 +10,7 @@ import { WAHA_KEY_CONNECTION_PROVIDER, WAHA_KEY_PURPOSE } from "@zetta/core/waha
 import { SPEECH_KEY_CONNECTION_PROVIDER, SPEECH_KEY_PURPOSE } from "@zetta/core/speech";
 import { Elysia } from "elysia";
 import { z } from "zod";
-import { AccessError, type createIdentityAccess } from "../identity/access";
+import { AccessError, type createIdentityAccess, isRoot } from "../identity/access";
 import { ConnectionsUnavailableError, PROVIDERS, type ConnectionsService } from "./service";
 
 /** `plugin`, `machine`, `transcribe`, `speech`, `push` and `mailbox` connections hold secrets managed by the Plugins tab, the Computer tab, the installation settings and the mailbox routes; they are neither listed nor user-creatable here. */
@@ -25,6 +25,7 @@ const MANAGED = [
   "phone",
   "phonetwilio",
   "waha",
+  "engine",
 ];
 /**
  * `compatible` (a model on the person's own server) is the person's own and is listed here, so it can be revoked, but it cannot be created
@@ -164,7 +165,7 @@ export function createConnectionRoutes(
       .put(
         "/connections/transcribe-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !transcribeKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !transcribeKey) throw new AccessError("ACCESS_DENIED");
           const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
           const { secret } = z.strictObject({ secret: z.string().min(8).max(8000) }).parse(
             await keyring.open(sealed, {
@@ -184,7 +185,7 @@ export function createConnectionRoutes(
       .delete(
         "/connections/transcribe-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !transcribeKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !transcribeKey) throw new AccessError("ACCESS_DENIED");
           await transcribeKey.set(null);
           return { ok: true };
         }),
@@ -193,7 +194,7 @@ export function createConnectionRoutes(
       .put(
         "/connections/speech-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !speechKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !speechKey) throw new AccessError("ACCESS_DENIED");
           const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
           const { secret } = z
             .strictObject({ secret: z.string().min(8).max(8000) })
@@ -210,7 +211,7 @@ export function createConnectionRoutes(
       .delete(
         "/connections/speech-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !speechKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !speechKey) throw new AccessError("ACCESS_DENIED");
           await speechKey.set(null);
           return { ok: true };
         }),
@@ -219,7 +220,7 @@ export function createConnectionRoutes(
       .put(
         "/connections/mail-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !mailKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !mailKey) throw new AccessError("ACCESS_DENIED");
           const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
           const { secret } = z
             .strictObject({ secret: z.string().min(8).max(8000) })
@@ -236,7 +237,7 @@ export function createConnectionRoutes(
       .delete(
         "/connections/mail-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !mailKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !mailKey) throw new AccessError("ACCESS_DENIED");
           await mailKey.set(null);
           return { ok: true };
         }),
@@ -245,7 +246,7 @@ export function createConnectionRoutes(
       .put(
         "/connections/phone-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !phoneKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !phoneKey) throw new AccessError("ACCESS_DENIED");
           const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
           const { secret } = z
             .strictObject({ secret: z.string().min(8).max(8000) })
@@ -262,7 +263,7 @@ export function createConnectionRoutes(
       .delete(
         "/connections/phone-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !phoneKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !phoneKey) throw new AccessError("ACCESS_DENIED");
           await phoneKey.set(null);
           return { ok: true };
         }),
@@ -271,7 +272,7 @@ export function createConnectionRoutes(
       .put(
         "/connections/phone-twilio-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !phoneTwilioKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !phoneTwilioKey) throw new AccessError("ACCESS_DENIED");
           const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
           const { secret } = z
             .strictObject({ secret: z.string().min(8).max(8000) })
@@ -290,7 +291,7 @@ export function createConnectionRoutes(
       .delete(
         "/connections/phone-twilio-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !phoneTwilioKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !phoneTwilioKey) throw new AccessError("ACCESS_DENIED");
           await phoneTwilioKey.set(null);
           return { ok: true };
         }),
@@ -299,7 +300,7 @@ export function createConnectionRoutes(
       .put(
         "/connections/waha-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !wahaKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !wahaKey) throw new AccessError("ACCESS_DENIED");
           const { sealed } = z.strictObject({ sealed: z.unknown() }).parse(c.body);
           const { secret } = z
             .strictObject({ secret: z.string().min(1).max(8000) })
@@ -316,7 +317,7 @@ export function createConnectionRoutes(
       .delete(
         "/connections/waha-key",
         g(async (c) => {
-          if (!c.actor.isAdmin || !wahaKey) throw new AccessError("ACCESS_DENIED");
+          if (!isRoot(c.actor) || !wahaKey) throw new AccessError("ACCESS_DENIED");
           await wahaKey.set(null);
           return { ok: true };
         }),

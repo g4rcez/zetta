@@ -2,15 +2,18 @@ import { sql } from "drizzle-orm";
 import {
   bytea,
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot } from "./chat";
@@ -44,6 +47,7 @@ export type SkillFileMode = (typeof SKILL_FILE_MODES)[number];
 export const skill = zetta.table(
   "skill",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -67,8 +71,9 @@ export const skill = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("skill_id_workspace_unique").on(t.id, t.workspaceId),
     uniqueIndex("skill_owner_name_active")
-      .on(t.ownerUserId, t.name)
+      .on(t.workspaceId, t.ownerUserId, t.name)
       .where(sql`${t.status} = 'active'`),
     index("skill_owner_idx").on(t.ownerUserId),
     check("skill_name_check", sql`${t.name} ~ '^[a-z][a-z0-9-]*$' and length(${t.name}) <= 63`),
@@ -80,6 +85,7 @@ export const skill = zetta.table(
 export const skillFile = zetta.table(
   "skill_file",
   {
+    workspaceId: inWorkspace(),
     skillId: uuid("skill_id")
       .notNull()
       .references(() => skill.id, restrict),
@@ -90,6 +96,13 @@ export const skillFile = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "skill_file_skill_id_workspace_fkey",
+      columns: [t.skillId, t.workspaceId],
+      foreignColumns: [skill.id, skill.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.skillId, t.path] }),
     check(
       "skill_file_path_check",
@@ -102,6 +115,7 @@ export const skillFile = zetta.table(
 export const botSkill = zetta.table(
   "bot_skill",
   {
+    workspaceId: inWorkspace(),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),
@@ -111,6 +125,13 @@ export const botSkill = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "bot_skill_bot_id_workspace_fkey",
+      columns: [t.botId, t.workspaceId],
+      foreignColumns: [bot.id, bot.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.botId, t.skillId] }),
     index("bot_skill_skill_idx").on(t.skillId),
   ],
@@ -125,6 +146,7 @@ export type SkillUseSource = (typeof SKILL_USE_SOURCES)[number];
 export const skillUse = zetta.table(
   "skill_use",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -138,6 +160,13 @@ export const skillUse = zetta.table(
     usedAt: timestamp("used_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "skill_use_skill_id_workspace_fkey",
+      columns: [t.skillId, t.workspaceId],
+      foreignColumns: [skill.id, skill.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     index("skill_use_skill_idx").on(t.skillId, t.usedAt),
     index("skill_use_bot_idx").on(t.botId),
   ],
@@ -150,6 +179,7 @@ export const skillUse = zetta.table(
 export const skillRevision = zetta.table(
   "skill_revision",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -170,6 +200,13 @@ export const skillRevision = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "skill_revision_skill_id_workspace_fkey",
+      columns: [t.skillId, t.workspaceId],
+      foreignColumns: [skill.id, skill.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     uniqueIndex("skill_revision_skill_version_idx").on(t.skillId, t.version),
     index("skill_revision_skill_idx").on(t.skillId, t.createdAt),
   ],
@@ -184,6 +221,7 @@ export const SKILL_REVIEW_OUTCOMES = ["none", "created", "revised"] as const;
 export const skillReview = zetta.table(
   "skill_review",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

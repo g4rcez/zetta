@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -15,6 +16,7 @@ import {
 import { ATTENTION_KINDS } from "@zetta/core/attention-kinds";
 import type { WorkData } from "@zetta/core/work-suggestions";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
@@ -47,6 +49,7 @@ export const ROUTINE_MODES = ["task", "goal"] as const;
 export const hook = zetta.table(
   "hook",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -67,6 +70,7 @@ export const hook = zetta.table(
 export const routine = zetta.table(
   "routine",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -136,6 +140,7 @@ export const routine = zetta.table(
 export const routineTrigger = zetta.table(
   "routine_trigger",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -168,6 +173,7 @@ export const routineTrigger = zetta.table(
 export const routineRun = zetta.table(
   "routine_run",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -223,6 +229,7 @@ export const routineRun = zetta.table(
 export const attentionItem = zetta.table(
   "attention_item",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -259,7 +266,7 @@ export const attentionItem = zetta.table(
     index("attention_item_subject_idx").on(t.ownerUserId, t.subjectId),
     index("attention_owner_idx").on(t.ownerUserId, t.status),
     uniqueIndex("attention_live_source")
-      .on(t.ownerUserId, t.sourceKey)
+      .on(t.workspaceId, t.ownerUserId, t.sourceKey)
       .where(sql`${t.sourceKey} is not null and ${t.status} in ('open', 'acknowledged')`),
   ],
 );
@@ -267,6 +274,7 @@ export const attentionItem = zetta.table(
 export const workflow = zetta.table(
   "workflow",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -276,13 +284,17 @@ export const workflow = zetta.table(
     version: integer("version").default(1).notNull(),
     createdAt: created(),
   },
-  (t) => [index("workflow_owner_idx").on(t.ownerUserId)],
+  (t) => [
+    unique("workflow_id_workspace_unique").on(t.id, t.workspaceId),
+    index("workflow_owner_idx").on(t.ownerUserId),
+  ],
 );
 
 /** Immutable published versions: a run always points at the exact graph it executed. */
 export const workflowVersion = zetta.table(
   "workflow_version",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -293,12 +305,22 @@ export const workflowVersion = zetta.table(
     graph: jsonb("graph").notNull(),
     createdAt: created(),
   },
-  (t) => [unique("workflow_version_unique").on(t.workflowId, t.version)],
+  (t) => [
+    foreignKey({
+      name: "workflow_version_workflow_id_workspace_fkey",
+      columns: [t.workflowId, t.workspaceId],
+      foreignColumns: [workflow.id, workflow.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    unique("workflow_version_unique").on(t.workflowId, t.version),
+  ],
 );
 
 export const workflowRun = zetta.table(
   "workflow_run",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -344,6 +366,7 @@ export const workflowRun = zetta.table(
 export const snapshot = zetta.table(
   "snapshot",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -360,7 +383,7 @@ export const snapshot = zetta.table(
   (t) => [
     index("snapshot_source_conversation_id_idx").on(t.sourceConversationId),
     uniqueIndex("snapshot_request")
-      .on(t.ownerUserId, t.requestKey)
+      .on(t.workspaceId, t.ownerUserId, t.requestKey)
       .where(sql`${t.requestKey} is not null`),
   ],
 );
@@ -368,6 +391,7 @@ export const snapshot = zetta.table(
 export const reaction = zetta.table(
   "reaction",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -394,6 +418,7 @@ export const FEEDBACK_REASON_MAX = 500;
 export const messageFeedback = zetta.table(
   "message_feedback",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -425,6 +450,7 @@ export const DRIVE_CHOICES = ["with", "without", "same"] as const;
 export const botDrivePrompt = zetta.table(
   "bot_drive_prompt",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -449,6 +475,7 @@ export const botDrivePrompt = zetta.table(
 export const botDriveRun = zetta.table(
   "bot_drive_run",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -490,6 +517,7 @@ export const botDriveRun = zetta.table(
 export const messagePin = zetta.table(
   "message_pin",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -505,6 +533,13 @@ export const messagePin = zetta.table(
     createdAt: created(),
   },
   (t) => [
+    foreignKey({
+      name: "message_pin_message_id_workspace_fkey",
+      columns: [t.messageId, t.workspaceId],
+      foreignColumns: [message.id, message.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     unique("message_pin_message_unique").on(t.messageId),
     index("message_pin_conversation_idx").on(t.conversationId, t.createdAt),
     index("message_pin_pinned_by_user_id_idx").on(t.pinnedByUserId),
@@ -519,6 +554,7 @@ export const messagePin = zetta.table(
 export const pollVote = zetta.table(
   "poll_vote",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -539,6 +575,13 @@ export const pollVote = zetta.table(
     createdAt: created(),
   },
   (t) => [
+    foreignKey({
+      name: "poll_vote_message_id_workspace_fkey",
+      columns: [t.messageId, t.workspaceId],
+      foreignColumns: [message.id, message.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     uniqueIndex("poll_vote_user_unique")
       .on(t.messageId, t.optionId, t.voterUserId)
       .where(sql`${t.voterUserId} is not null`),
@@ -558,6 +601,7 @@ export const pollVote = zetta.table(
 export const attachment = zetta.table(
   "attachment",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -585,6 +629,7 @@ export const APPROVAL_RULE_STATUSES = ["active", "revoked"] as const;
 export const configProposal = zetta.table(
   "config_proposal",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -650,6 +695,7 @@ export const configProposal = zetta.table(
 export const approvalRule = zetta.table(
   "approval_rule",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -682,6 +728,7 @@ export const approvalRule = zetta.table(
 export const delegation = zetta.table(
   "delegation",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -713,6 +760,7 @@ export const delegation = zetta.table(
 export const decisionConfig = zetta.table(
   "decision_config",
   {
+    workspaceId: inWorkspace(),
     botId: uuid("bot_id")
       .primaryKey()
       .references(() => bot.id, restrict),
@@ -744,6 +792,7 @@ export const decisionConfig = zetta.table(
 export const botConnection = zetta.table(
   "bot_connection",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -771,6 +820,7 @@ export const BROWSER_PROFILE_KINDS = ["isolated", "own"] as const;
 export const browserProfile = zetta.table(
   "browser_profile",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -789,7 +839,7 @@ export const browserProfile = zetta.table(
   },
   (t) => [
     index("browser_profile_bot_id_idx").on(t.botId),
-    unique("browser_profile_unique").on(t.ownerUserId, t.name),
+    unique("browser_profile_unique").on(t.workspaceId, t.ownerUserId, t.name),
   ],
 );
 
@@ -803,6 +853,7 @@ export const computerOsList = ["debian", "ubuntu"] as const;
 export const computerVm = zetta.table(
   "computer_vm",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -835,11 +886,11 @@ export const computerVm = zetta.table(
     index("computer_vm_created_by_bot_id_idx").on(t.createdByBotId),
     index("computer_vm_owner_idx").on(t.ownerUserId, t.status),
     uniqueIndex("computer_vm_default_unique")
-      .on(t.ownerUserId)
+      .on(t.workspaceId, t.ownerUserId)
       .where(sql`${t.kind} = 'default' and ${t.status} <> 'deleted'`),
     // One computer per user on the server's own desktop: there is one screen and one set of signed-in apps.
     uniqueIndex("computer_vm_local_unique")
-      .on(t.ownerUserId)
+      .on(t.workspaceId, t.ownerUserId)
       .where(sql`${t.target} = 'local' and ${t.status} <> 'deleted'`),
   ],
 );
@@ -849,6 +900,7 @@ export const machineKinds = ["ssh", "sftp", "ftp"] as const;
 export const machine = zetta.table(
   "machine",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -871,7 +923,7 @@ export const machine = zetta.table(
     check("machine_host_key_check", sql`${t.kind} = 'ftp' or ${t.hostKey} is not null`),
     index("machine_connection_id_idx").on(t.connectionId),
     uniqueIndex("machine_owner_name_unique")
-      .on(t.ownerUserId, t.name)
+      .on(t.workspaceId, t.ownerUserId, t.name)
       .where(sql`${t.deletedAt} is null`),
   ],
 );
@@ -880,6 +932,7 @@ export const machine = zetta.table(
 export const machineBot = zetta.table(
   "machine_bot",
   {
+    workspaceId: inWorkspace(),
     machineId: uuid("machine_id")
       .notNull()
       .references(() => machine.id, { onDelete: "cascade", onUpdate: "restrict" }),
@@ -900,6 +953,7 @@ export const machineBot = zetta.table(
 export const auditEvent = zetta.table(
   "audit_event",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -920,6 +974,9 @@ export const auditEvent = zetta.table(
         "voice_call",
         // A server setting changed or reset in Studio (modules/settings): the key in `subject_id`, `set` or `reset` in `detail`. Never the value.
         "setting",
+        // A workspace changed (modules/workspaces): a person's role, a shared Chief, the name. The person in `subject_id`, the change in
+        // `detail` (`role:admin`, `chief:set`, `chief:removed`, `name`).
+        "workspace",
       ],
     }).notNull(),
     outcome: text("outcome", {
@@ -937,6 +994,10 @@ export const auditEvent = zetta.table(
     botId: uuid("bot_id"),
     subjectId: text("subject_id"),
     detail: text("detail"),
+    // A harness run on an agent account (modules/engine-accounts): the account, and the person whose account it is when that is not
+    // the person who asked (`owner_user_id`). Null for a run on the server's own sign-in, and for every other kind.
+    accountId: uuid("account_id"),
+    payerUserId: text("payer_user_id"),
     // Token counts of a harness run (all its processes added up). Null when the harness does not report them.
     inputTokens: integer("input_tokens"),
     cacheReadTokens: integer("cache_read_tokens"),
@@ -959,6 +1020,7 @@ export const auditEvent = zetta.table(
 export const mcpServer = zetta.table(
   "mcp_server",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -983,9 +1045,9 @@ export const mcpServer = zetta.table(
   (t) => [
     index("mcp_server_connection_id_idx").on(t.connectionId),
     // A user may hold a private and a team configuration of the same plugin; the workspace has one team configuration per plugin.
-    unique("mcp_server_owner_name").on(t.ownerUserId, t.name, t.sharing),
+    unique("mcp_server_owner_name").on(t.workspaceId, t.ownerUserId, t.name, t.sharing),
     uniqueIndex("mcp_server_team_name")
-      .on(t.name)
+      .on(t.workspaceId, t.name)
       .where(sql`${t.sharing} = 'team'`),
   ],
 );
@@ -994,6 +1056,7 @@ export const mcpServer = zetta.table(
 export const botIntegration = zetta.table(
   "bot_integration",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -1022,6 +1085,7 @@ export const botIntegration = zetta.table(
 export const source = zetta.table(
   "source",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -1038,6 +1102,6 @@ export const source = zetta.table(
   },
   (t) => [
     index("source_connection_id_idx").on(t.connectionId),
-    unique("source_owner_url").on(t.ownerUserId, t.url),
+    unique("source_owner_url").on(t.workspaceId, t.ownerUserId, t.url),
   ],
 );

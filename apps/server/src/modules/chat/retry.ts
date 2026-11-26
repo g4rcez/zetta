@@ -10,6 +10,8 @@ export function failureKind(code: string | null | undefined): FailureKind {
     code === "auth_required" ||
     code === "not_installed" ||
     code === "no_safe_mode" ||
+    code === "host_refused" ||
+    code === "workspace_quota" ||
     code === "owner_inactive"
   )
     return "needs_person";

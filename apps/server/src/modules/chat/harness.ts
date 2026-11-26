@@ -1,4 +1,5 @@
 import { uuidv7 } from "@zetta/core/uuid";
+import { tenant } from "@zetta/db";
 import { chmod, copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { containerPrefix, dataDir } from "@zetta/core/zetta-home";
@@ -646,6 +647,58 @@ export function harnessHome(
   if (!root || !userId) return undefined;
   return join(root, userId.replace(/[^A-Za-z0-9_-]/g, "_"), harness);
 }
+/** The environment of a CLI the server starts outside a run (a sign-in, a status check): the same short list, and what the caller adds. */
+export const cliEnv = (extra?: Record<string, string>) => passEnv(undefined, extra);
+/**
+ * The same command inside the image bot runs use, for a server that keeps its engines there (`ZETTA_HARNESS_RUNTIME=docker`): thrown
+ * away when it ends, with the account's folder as the only thing of the server it can write. `variables` name that folder as the CLI
+ * knows it; they hold a path, never a secret.
+ */
+export function containerCli(
+  cfg: DockerConfig,
+  o: { argv: string[]; folder: string; variables: Record<string, string>; terminal: boolean },
+) {
+  return [
+    cfg.bin,
+    "run",
+    "--rm",
+    "-i",
+    ...(o.terminal ? ["-t"] : []),
+    "--network",
+    cfg.network,
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges",
+    "--pids-limit",
+    String(cfg.pids),
+    "--memory",
+    cfg.memory,
+    "--cpus",
+    cfg.cpus,
+    "--user",
+    containerUser().user,
+    "--entrypoint",
+    "",
+    "--tmpfs",
+    `/home/agent:rw,size=64m${tmpfsOwner(cfg.engine)}`,
+    "-e",
+    "HOME=/home/agent",
+    "-e",
+    "LANG=C.UTF-8",
+    "-v",
+    `${o.folder}:${CONTAINER_ACCOUNT_DIR}:rw`,
+    ...Object.entries(o.variables).flatMap(([name, value]) =>
+      /^[A-Z][A-Z0-9_]*$/.test(name) ? ["-e", `${name}=${value}`] : [],
+    ),
+    cfg.image,
+    ...o.argv,
+  ];
+}
+/** What the container client itself needs to reach its engine. */
+export const containerClientEnv = (): Record<string, string> => ({
+  PATH: process.env.PATH ?? "",
+  HOME: process.env.HOME ?? "",
+  ...(process.env.DOCKER_HOST ? { DOCKER_HOST: process.env.DOCKER_HOST } : {}),
+});
 function passEnv(home?: string, extra?: Record<string, string>) {
   const env: Record<string, string> = { LANG: "C.UTF-8" };
   for (const k of passed) if (process.env[k]) env[k] = process.env[k]!;
@@ -675,6 +728,10 @@ export type HarnessErrorCode =
   | "quota"
   /** The run has no code access and this engine's tools cannot be switched off here (see `NO_SAFE_MODE`). */
   | "no_safe_mode"
+  /** A server for many organizations (`ZETTA_MODE=app`) runs bots only in a container, on a network of its own: never on the server. */
+  | "host_refused"
+  /** The workspace used what root gives it this month (modules/workspaces/quotas.ts). */
+  | "workspace_quota"
   /** Not a failure: a message arrived before the run did anything, so the caller starts it again with that message (see `CliInbox`). */
   | "restarted";
 export type DockerConfig = {
@@ -723,6 +780,8 @@ export function dockerArgs(
     imageDir?: string | undefined;
     /** Claude Code: where the wrapper copies the output of the commands it runs (see step-output.ts). Read and write. */
     liveDir?: string | undefined;
+    /** The folder of the agent account this run uses (modules/engine-accounts): the CLI's own sign-in. Read and write. */
+    accountDir?: string | undefined;
     /** Keep the container's stdin open: the run reads its prompt and later messages from it. */
     stdin?: boolean;
     env: Record<string, string>;
@@ -764,6 +823,7 @@ export function dockerArgs(
   if (o.pluginDir) args.push("-v", `${o.pluginDir}:${CONTAINER_PLUGIN_DIR}:ro`);
   if (o.imageDir) args.push("-v", `${o.imageDir}:${CONTAINER_IMAGE_DIR}:ro`);
   if (o.liveDir) args.push("-v", `${o.liveDir}:${CONTAINER_LIVE_DIR}:rw`);
+  if (o.accountDir) args.push("-v", `${o.accountDir}:${CONTAINER_ACCOUNT_DIR}:rw`);
   if (o.home) args.push("-v", `${o.home}:/home/agent:rw`);
   else args.push("--tmpfs", `/home/agent:rw,size=64m${tmpfsOwner(cfg.engine)}`);
   // Values never appear in argv (visible to every local user via `ps`): `-e KEY` makes docker read them from its own environment.
@@ -772,6 +832,7 @@ export function dockerArgs(
 }
 
 export const CONTAINER_PLUGIN_DIR = "/zetta-plugin";
+export const CONTAINER_ACCOUNT_DIR = "/zetta-account";
 
 export class HarnessError extends Error {
   constructor(readonly code: HarnessErrorCode) {
@@ -784,7 +845,7 @@ export function harnessMessage(harness: string, code: HarnessErrorCode) {
     case "not_installed":
       return `${harness} is not installed on this server. Ask the administrator to install it.`;
     case "auth_required":
-      return `${harness} is not signed in for you. Sign in to ${harness} on the server, then try again.`;
+      return `${harness} is not signed in for you. Connect your account for it in Studio > Accounts, then try again.`;
     case "timeout":
       return `${harness} took too long and was stopped. Try a shorter request.`;
     case "quota":
@@ -795,6 +856,10 @@ export function harnessMessage(harness: string, code: HarnessErrorCode) {
       return "The run was cancelled.";
     case "no_safe_mode":
       return `${harness} cannot run on this server without code access: its tools cannot be switched off. Choose another engine for this bot, or give it a fallback engine.`;
+    case "workspace_quota":
+      return "This workspace has used the bot runs it has for this month. Ask its owner, or wait for the next month.";
+    case "host_refused":
+      return "This server runs bots only in containers, and none is set up for them. Ask the person who runs the server.";
     default:
       return `${harness} could not answer. Try again.`;
   }
@@ -802,6 +867,58 @@ export function harnessMessage(harness: string, code: HarnessErrorCode) {
 const QUOTA_PATTERN = /usage limit|rate limit|quota|usage_limit_reached|credits/i;
 const AUTH_PATTERN =
   /not logged in|please (run )?\/?login|log in|sign in|unauthori[sz]ed|authentication|api key|credential|401/i;
+
+/**
+ * The account a run uses (modules/engine-accounts). Its variables hold the secret or point the CLI at the account's own folder; in a
+ * container the folder is mounted and the variable holds the mount.
+ */
+export type RunAccount = {
+  accountId: string;
+  ownerUserId: string;
+  env: Record<string, string>;
+  folder?: { path: string; variable: string };
+};
+/**
+ * Asked once per run, before anything starts. It answers with the account the run uses, `undefined` for the sign-in of the server's
+ * own user, or throws `HarnessError("auth_required")` when the person has no account and the server's sign-in is not for them.
+ */
+export type RunAccounts = (run: {
+  harness: NativeHarness;
+  /** The person the run belongs to. */
+  userId: string | undefined;
+  /** The person whose account pays, when the caller already knows (a shared bot in a room). */
+  payerUserId: string | undefined;
+  botId: string | undefined;
+}) => Promise<RunAccount | undefined>;
+let runAccounts: RunAccounts | undefined;
+/** Told when the engine refused the sign-in of the account a run used, so the account's state can follow. */
+export type AccountRefused = (run: { accountId: string; harness: NativeHarness }) => void;
+let accountRefused: AccountRefused | undefined;
+/**
+ * The meter of a workspace's use (modules/workspaces/quotas.ts): asked before any CLI starts, told when it ends, for the workspace the
+ * run is for. Registered once at start-up, like the accounts.
+ */
+export type RunMeter = {
+  admit(workspaceId: string): Promise<void>;
+  record(workspaceId: string, ms: number): Promise<void>;
+};
+let runMeter: RunMeter | undefined;
+export const setRunMeter = (meter: RunMeter | undefined) => {
+  runMeter = meter;
+};
+export const setAccountRefused = (listener: AccountRefused | undefined) => {
+  accountRefused = listener;
+};
+/** Registered once at start-up. Every run of every caller goes through it, so no path can start a CLI on the wrong sign-in. */
+export const setRunAccounts = (source: RunAccounts | undefined) => {
+  runAccounts = source;
+};
+/** What the run that is about to start uses, for the caller that records it: the engine, and the account when it runs on one. */
+export type OnAccount = (run: {
+  harness: NativeHarness;
+  accountId?: string;
+  ownerUserId?: string;
+}) => void;
 
 export type CliInput = {
   harness: NativeHarness;
@@ -812,6 +929,10 @@ export type CliInput = {
   userId?: string;
   /** The bot that runs, so the slow-turn card can tell which CLI belongs to which answer (see processes.ts). */
   botId?: string;
+  /** Whose agent account pays for this run, when it is not the person it belongs to (see `RunAccounts`). */
+  payerUserId?: string;
+  /** Called once with the engine this run uses and, when it runs on one, the agent account. */
+  onAccount?: OnAccount;
   /** Run in the user's persistent code directory with git and file permissions pre-approved. The identity signs commits. */ code?: GitIdentity;
   /** Claude Code and Hermes: this bot's own permissions, prompt, effort, skills (and, for Claude Code, budget and sub-agents). */ profile?: AgentProfile;
   extraEnv?: Record<string, string>;
@@ -1005,6 +1126,8 @@ export const streamCli: StreamCli = async function* ({
   system,
   model,
   userId,
+  payerUserId,
+  onAccount,
   extraEnv: givenEnv,
   signal,
   timeoutMs,
@@ -1052,8 +1175,31 @@ export const streamCli: StreamCli = async function* ({
     harness === "claude-code"
       ? { CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", ...callerEnv }
       : callerEnv;
+  // A server for many organizations never runs a bot as its own user, nor on the host's network (which reaches the database).
+  if (process.env.ZETTA_MODE === "app" && (!docker || docker.network === "host"))
+    throw new HarnessError("host_refused");
   const exe = docker ? docker.bin : resolve(harnessCommands[harness]("x", null)[0]!);
   if (!exe) throw new HarnessError("not_installed");
+  // The account comes last, so nothing a caller passed can stand in for it. Its folder is mounted in a container, where the variable
+  // holds the mount.
+  // A workspace over what it may use this month runs nothing more.
+  const meteredIn = tenant.current();
+  if (meteredIn && runMeter) await runMeter.admit(meteredIn);
+  const account = runAccounts
+    ? await runAccounts({ harness, userId, payerUserId, botId })
+    : undefined;
+  onAccount?.({
+    harness,
+    ...(account ? { accountId: account.accountId, ownerUserId: account.ownerUserId } : {}),
+  });
+  if (account)
+    extraEnv = {
+      ...extraEnv,
+      ...account.env,
+      ...(account.folder
+        ? { [account.folder.variable]: docker ? CONTAINER_ACCOUNT_DIR : account.folder.path }
+        : {}),
+    };
   if (!codePath && !docker && NO_SAFE_MODE.has(harness)) throw new HarnessError("no_safe_mode");
   const release = await defaultLimiter.acquire(
     userId ?? "anonymous",
@@ -1079,12 +1225,17 @@ export const streamCli: StreamCli = async function* ({
     live: LiveRun | undefined;
   let child: ReturnType<typeof Bun.spawn> | undefined;
   let untrack = () => {};
+  let ranFrom: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined,
     slot: ReturnType<typeof setTimeout> | undefined;
   try {
     if (home) {
       await mkdir(home, { recursive: true, mode: 0o700 });
       await chmod(home, 0o700).catch(() => {});
+    }
+    if (account?.folder) {
+      await mkdir(account.folder.path, { recursive: true, mode: 0o700 });
+      await chmod(account.folder.path, 0o700).catch(() => {});
     }
     if (codePath) {
       await mkdir(codePath, { recursive: true, mode: 0o700 });
@@ -1179,6 +1330,7 @@ export const streamCli: StreamCli = async function* ({
               pluginDir,
               imageDir: docker ? imageDir : undefined,
               liveDir,
+              accountDir: account?.folder?.path,
               stdin: liveInput,
               env: extraEnv ?? {},
             }),
@@ -1208,6 +1360,7 @@ export const streamCli: StreamCli = async function* ({
           detached: true,
         } as never);
     const proc = child;
+    ranFrom = Date.now();
     untrack = trackRun(signal, {
       botId,
       harness,
@@ -1390,17 +1543,18 @@ export const streamCli: StreamCli = async function* ({
       if ((code !== 0 && total <= OUTPUT_CAP) || total === 0) {
         // Claude Code reports its own errors (a bad key, a spent quota) in the result event, on stdout.
         const why = `${errText}\n${events?.state.errorText ?? ""}`;
-        throw new HarnessError(
-          timedOut
-            ? "timeout"
-            : cancelled
-              ? "cancelled"
-              : QUOTA_PATTERN.test(why)
-                ? "quota"
-                : AUTH_PATTERN.test(why)
-                  ? "auth_required"
-                  : "failed",
-        );
+        const kind = timedOut
+          ? "timeout"
+          : cancelled
+            ? "cancelled"
+            : QUOTA_PATTERN.test(why)
+              ? "quota"
+              : AUTH_PATTERN.test(why)
+                ? "auth_required"
+                : "failed";
+        if (kind === "auth_required" && account)
+          accountRefused?.({ accountId: account.accountId, harness });
+        throw new HarnessError(kind);
       }
     } finally {
       unpoke();
@@ -1410,6 +1564,9 @@ export const streamCli: StreamCli = async function* ({
     }
   } finally {
     untrack();
+    // Counted as it ends, whatever the end: the time is spent either way.
+    if (meteredIn && runMeter && ranFrom !== undefined)
+      void runMeter.record(meteredIn, Date.now() - ranFrom).catch(() => undefined);
     if (timer) clearTimeout(timer);
     if (slot) clearTimeout(slot);
     if (child) kill(child.pid);

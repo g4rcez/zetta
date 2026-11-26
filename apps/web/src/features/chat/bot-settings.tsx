@@ -49,6 +49,7 @@ import {
 } from "./chat-client";
 import { MentionTextarea } from "./mention";
 import { useSidebarData } from "./sidebar-data";
+import { BotEngineChoice } from "../engine-accounts/bot-engine-choice";
 
 const UNGROUPED = "__ungrouped";
 
@@ -224,6 +225,7 @@ export function GeneralForm({ bot, spaces, onBotChange, notify }: Common) {
           </Button>
         </div>
       </form>
+      <BotEngineChoice botId={bot.id} />
       {spaces.length > 0 && (
         <Select
           title="Folder"

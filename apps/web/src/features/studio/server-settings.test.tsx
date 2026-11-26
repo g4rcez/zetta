@@ -124,7 +124,7 @@ afterEach(async () => {
 const settle = (ms = 60) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
 
 type SearchCall = { next: SettingsSearch; how: string };
-async function mount(search: SettingsSearch = {}, admin = true) {
+async function mount(search: SettingsSearch = {}, admin = true, isRoot = admin) {
   const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
     await import("@tanstack/react-router");
   const { ServerSettingsPage } = await import("./server-settings");
@@ -137,6 +137,7 @@ async function mount(search: SettingsSearch = {}, admin = true) {
       <QueryClientProvider client={queryClient}>
         <ServerSettingsPage
           admin={admin}
+          root={isRoot}
           search={current}
           setSearch={(next, how) => {
             calls.push({ next, how });
@@ -204,6 +205,26 @@ describe("who sees the page", () => {
     expect(text()).toContain("Only administrators");
     expect(reads).toEqual([]);
     expect(win.document.querySelector("form")).toBeNull();
+  });
+  test("an administrator who did not set the server up changes a workspace's settings; the server's and its security policy are only shown", async () => {
+    await mount({}, true, false);
+    expect(text()).toContain("You administer this workspace.");
+    // `lightRuns` is a workspace's to choose.
+    const open = row("Light background runs");
+    expect(button(/^Save$/, open)).toBeDefined();
+    expect(open.textContent).not.toContain("Decided for the whole server");
+    // `harnessMax` is one number for the server, `codeAccess` is security policy.
+    for (const label of ["Bot runs at once, in total", "Bots may run code"]) {
+      const locked = row(label);
+      expect(locked.textContent).toContain(
+        "Decided for the whole server. Only the person who set the server up changes it.",
+      );
+      expect(button(/^Save$/, locked)).toBeUndefined();
+      expect(button(/^Reset to default$/, locked)).toBeUndefined();
+      for (const control of locked.querySelectorAll("input, select"))
+        expect((control as HTMLInputElement).disabled).toBe(true);
+    }
+    expect(writes).toEqual([]);
   });
   test("it says it is loading, then lists the settings", async () => {
     await mount();

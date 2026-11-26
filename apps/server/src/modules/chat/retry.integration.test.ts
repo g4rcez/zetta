@@ -110,7 +110,7 @@ suite("a chat turn that hits a harness failure against compose postgres", () => 
     const reply = await answer(await conversation());
     expect(reply.status).toBe("failed");
     expect(reply.content).toBe(
-      "pi is not signed in for you. Sign in to pi on the server, then try again.",
+      "pi is not signed in for you. Connect your account for it in Studio > Accounts, then try again.",
     );
     expect(reply.meta).toMatchObject({ error: "auth_required" });
     expect(runs).toBe(1);

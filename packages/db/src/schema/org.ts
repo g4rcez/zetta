@@ -1,16 +1,19 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   text,
   timestamp,
+  type AnyPgColumn,
+  unique,
   uniqueIndex,
   uuid,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { ORG_RANKS, ORG_SEATS } from "@zetta/core/org";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot } from "./chat";
@@ -34,16 +37,24 @@ export {
  * The company chart: one row per installation (one per workspace once workspaces land). `version` is the compare-and-swap token of every edit,
  * so two admins editing at once never overwrite each other silently.
  */
-export const orgChart = zetta.table("org_chart", {
-  id: uuid("id")
-    .primaryKey()
-    .default(sql`uuidv7()`),
-  name: text("name").default("Company").notNull(),
-  version: integer("version").default(1).notNull(),
-  updatedByUserId: text("updated_by_user_id").references(() => user.id, restrict),
-  createdAt: stamp("created_at"),
-  updatedAt: stamp("updated_at"),
-});
+export const orgChart = zetta.table(
+  "org_chart",
+  {
+    workspaceId: inWorkspace(),
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    name: text("name").default("Company").notNull(),
+    version: integer("version").default(1).notNull(),
+    updatedByUserId: text("updated_by_user_id").references(() => user.id, restrict),
+    createdAt: stamp("created_at"),
+    updatedAt: stamp("updated_at"),
+  },
+  (t) => [
+    unique("org_chart_id_workspace_unique").on(t.id, t.workspaceId),
+    unique("org_chart_one_per_workspace").on(t.workspaceId),
+  ],
+);
 
 /**
  * A seat in the chart. `parentId` is "reports to": the root has none and is the CEO. A seat is held by nobody, a person or a bot; one
@@ -53,6 +64,7 @@ export const orgChart = zetta.table("org_chart", {
 export const orgPosition = zetta.table(
   "org_position",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -75,6 +87,13 @@ export const orgPosition = zetta.table(
     updatedAt: stamp("updated_at"),
   },
   (t) => [
+    foreignKey({
+      name: "org_position_chart_id_workspace_fkey",
+      columns: [t.chartId, t.workspaceId],
+      foreignColumns: [orgChart.id, orgChart.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     uniqueIndex("org_position_one_root")
       .on(t.chartId)
       .where(sql`${t.parentId} is null`),

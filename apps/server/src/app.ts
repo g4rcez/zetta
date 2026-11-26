@@ -17,6 +17,15 @@ import { createEventRoutes, type EventServices } from "./modules/events/routes";
 import { createComputerRoutes, type ComputerServices } from "./modules/computer/routes";
 import { createInstallationRoutes, type InstallationServices } from "./modules/installation/routes";
 import { createSettingsRoutes, type SettingsServices } from "./modules/settings/routes";
+import {
+  createWorkspaceRoutes,
+  withWorkspaces,
+  type WorkspaceServices,
+} from "./modules/workspaces/routes";
+import {
+  createEngineAccountRoutes,
+  type EngineAccountServices,
+} from "./modules/engine-accounts/routes";
 import { createConnectionRoutes, type ConnectionServices } from "./modules/connections/routes";
 import { createMailRoutes, type MailServices } from "./modules/mail/routes";
 import { createIntegrationRoutes, type IntegrationServices } from "./modules/integrations/routes";
@@ -67,6 +76,8 @@ export type CreateAppOptions = {
   identity?: IdentityServices;
   installation?: InstallationServices;
   settings?: SettingsServices;
+  workspaces?: WorkspaceServices;
+  engineAccounts?: EngineAccountServices;
   chat?: ChatServices;
   events?: EventServices;
   features?: FeatureServices;
@@ -131,6 +142,8 @@ export function createApp({
   identity,
   installation,
   settings,
+  workspaces,
+  engineAccounts,
   chat,
   events,
   features,
@@ -202,7 +215,8 @@ export function createApp({
   // systemRouter: false keeps routing in Elysia's own fetch handler. With Bun's native route table (`Bun.serve({ routes })`), Bun
   // 1.3.14 segfaults in routeListGetCached while serving a request under `bun --hot` (crash report decoded 2026-10-26), taking
   // the API and every live VNC session down with it.
-  return (
+  // Each request runs for its own person's workspace once it knows them (modules/workspaces/request-context.ts).
+  return withWorkspaces(
     new Elysia({ systemRouter: false })
       .mapResponse({ as: "global" }, ({ response, set }) => {
         if (response instanceof Response) set.status = response.status;
@@ -216,7 +230,8 @@ export function createApp({
         cors({
           origin: [webOrigin, ...desktopOrigins],
           methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-          allowedHeaders: ["Content-Type", "Authorization"],
+          // X-Zetta-Workspace: the workspace a tab works in (modules/workspaces/request-context.ts).
+          allowedHeaders: ["Content-Type", "Authorization", "X-Zetta-Workspace"],
           credentials: true,
         }),
       )
@@ -257,6 +272,19 @@ export function createApp({
       .use(
         settings
           ? (createSettingsRoutes(settings, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        workspaces
+          ? (createWorkspaceRoutes(workspaces, [webOrigin, ...desktopOrigins]) as unknown as Elysia)
+          : new Elysia(),
+      )
+      .use(
+        engineAccounts
+          ? (createEngineAccountRoutes(engineAccounts, [
+              webOrigin,
+              ...desktopOrigins,
+            ]) as unknown as Elysia)
           : new Elysia(),
       )
       .use(chat ? createChatRoutes(chat, [webOrigin, ...desktopOrigins]) : new Elysia())
@@ -388,6 +416,6 @@ export function createApp({
         webDist
           ? (webStaticRoutes(webDist) as unknown as Elysia)
           : (new Elysia().get("/", () => "OK") as unknown as Elysia),
-      )
+      ),
   );
 }

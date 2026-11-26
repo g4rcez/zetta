@@ -6,6 +6,8 @@ Status: approved product/access policy. The user approved the proposed defaults 
 
 One installation has one human membership set, not organizations or nested teams. Each local user has at most one active membership. Enrollment is closed: admin-approved, expiring, single-use invitations bound to the intended account. Authentication without active membership grants no domain access. Workspaces and inner groups are each user's visual sidebar organization, not membership or access boundaries.
 
+_Since workspace roles (see [workspaces.md](workspaces.md), "Roles and root"): the installation admin is root, who owns the workspace; other people can be owners or administrators of the workspace. What this section says about the admin's limits holds for all of them: no private-content override, no impersonation, no access to another person's secrets._
+
 Exactly one installation admin exists after bootstrap. Bootstrap is explicit, atomic, one-time and operator-controlled; first public signup never wins admin status. Recovery/replacement requires installation-operator control and an explicit audited procedure, invalidates affected sessions, and preserves exactly one admin. No second standing admin, automatic succession, or private-content bypass. Exact bootstrap/recovery mechanics remain an implementation approval gate.
 
 ## Access matrix

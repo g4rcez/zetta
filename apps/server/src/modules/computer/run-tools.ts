@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { tenant } from "@zetta/db";
 
 import { createMcpHandler, McpServer, type CallToolResult } from "@modelcontextprotocol/server";
 import { Elysia } from "elysia";
@@ -38,6 +39,8 @@ type Grant = {
   signal?: AbortSignal | undefined;
   /** Shows the computer in the chat (the same card the fenced blocks raise). */
   onComputer?: ((vm: { id: string; name: string }, step?: string) => void) | undefined;
+  /** The workspace of the turn that minted the token: the CLI's calls back, which name no person, work there. */
+  workspaceId?: string | undefined;
 };
 
 const grants = new Map<string, Grant>();
@@ -45,7 +48,7 @@ const grants = new Map<string, Grant>();
 /** A token for one turn; `revoke` when the turn ends (also done when its signal aborts). */
 export function mintRunToken(g: Grant) {
   const token = randomBytes(32).toString("base64url");
-  grants.set(token, g);
+  grants.set(token, { ...g, workspaceId: g.workspaceId ?? tenant.current() });
   const revoke = () => grants.delete(token);
   g.signal?.addEventListener("abort", revoke, { once: true });
   return { token, revoke };
@@ -173,6 +176,7 @@ export function createRunToolRoutes(vms: VmPort | undefined) {
   return new Elysia().all("/api/run-tools/mcp", ({ request }) => {
     const g = grantOf(request.headers.get("authorization"));
     if (!g || !vms) return Response.json({ error: "unauthorized" }, { status: 401 });
+    if (g.workspaceId) tenant.claim(g.workspaceId);
     return mcp.fetch(request, {
       authInfo: { token: "", clientId: "zetta-run", scopes: [], extra: { grant: g } },
     });

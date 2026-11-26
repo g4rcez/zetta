@@ -1,22 +1,53 @@
 import type { Database } from "@zetta/db";
 
 /**
+ * Runs the statements of a cleanup as the login, not as the app's role (packages/db/src/index.ts): the wall between workspaces would hide
+ * the rows a test made in another workspace than the one the cleanup runs for. One transaction: `set local role none` ends with it, so
+ * the connection goes back to the pool as the app's role. Test databases only, where the login is a superuser.
+ */
+type Query = (
+  sql: string,
+  values?: unknown[],
+) => Promise<{ rowCount: number | null; rows: Record<string, unknown>[] }>;
+
+async function asLogin(db: Database, work: (query: Query) => Promise<void>) {
+  const client = await db.$client.connect();
+  try {
+    await client.query("begin");
+    await client.query("set local role none");
+    await work((sql, values) => client.query(sql, values));
+    await client.query("commit");
+  } catch (error) {
+    await client.query("rollback").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Empties the company chart: seats that nobody reports to first (a seat cannot be deleted while another one reports to it), then the chart.
  * A chart left behind would add its text to the prompt of every later test, so a test that draws one calls this when it is done.
  */
 export async function resetOrgChart(db: Database) {
-  for (let i = 0; i < 20; i++) {
-    const r = await db.$client.query(
-      "delete from org_position p where not exists (select 1 from org_position c where c.parent_id = p.id)",
-    );
-    if (!r.rowCount) break;
-  }
-  await db.$client.query("delete from org_chart");
+  await asLogin(db, async (query) => {
+    for (let i = 0; i < 20; i++) {
+      const r = await query(
+        "delete from org_position p where not exists (select 1 from org_position c where c.parent_id = p.id)",
+      );
+      if (!r.rowCount) break;
+    }
+    await query("delete from org_chart");
+  });
 }
 
 /** Deletes everything owned by the given synthetic test users, in foreign-key-safe order. Test databases only. */
 export async function cleanupTestUsers(db: Database, ids: string[]) {
-  const q = (sql: string) => db.$client.query(sql, [ids]);
+  await asLogin(db, (query) => cleanup(query, ids));
+}
+
+async function cleanup(query: Query, ids: string[]) {
+  const q = (sql: string) => query(sql, [ids]);
   await q(
     "delete from memory_suggestion where author_user_id = any($1) or page_owner_user_id = any($1)",
   );
@@ -152,6 +183,32 @@ export async function cleanupTestUsers(db: Database, ids: string[]) {
   await q("delete from output_style where owner_user_id = any($1)");
   await q("delete from folder where owner_user_id = any($1)");
   await q("delete from connection where owner_user_id = any($1)");
+  // The workspace side of a person: a Chief someone shared with them or that they shared, the extras of their invitations, their place.
+  await q("delete from chief_share where user_id = any($1) or granted_by_user_id = any($1)");
+  await q(
+    "delete from invitation_grant where invitation_id in (select id from invitation where issued_by_user_id = any($1) or intended_user_id = any($1) or consumed_by_user_id = any($1))",
+  );
+  await q("delete from workspace_member where user_id = any($1)");
   await q("delete from membership where user_id = any($1)");
   await q('delete from "user" where id = any($1)');
+}
+
+/**
+ * Removes workspaces a test made, with every row in them: the foreign keys are not checked while it runs, so no order is needed. Never the
+ * first workspace, which every database has and other tests' rows are in. Test databases only.
+ */
+export async function dropTestWorkspaces(db: Database, ids: string[]) {
+  await asLogin(db, async (query) => {
+    const first = await query("select id from workspace order by created_at, id limit 1");
+    const keep = first.rows[0]?.id;
+    const drop = ids.filter((id) => id !== keep);
+    if (!drop.length) return;
+    await query("set local session_replication_role = replica");
+    const tables = await query(
+      "select table_name as name from information_schema.columns where table_schema = 'zetta' and column_name = 'workspace_id'",
+    );
+    for (const { name } of tables.rows)
+      await query(`delete from zetta."${String(name)}" where workspace_id = any($1)`, [drop]);
+    await query("delete from workspace where id = any($1)", [drop]);
+  });
 }

@@ -787,7 +787,7 @@ export function createComputerService({
           ...values,
         })
         .onConflictDoUpdate({
-          target: [browserProfile.ownerUserId, browserProfile.name],
+          target: [browserProfile.workspaceId, browserProfile.ownerUserId, browserProfile.name],
           set: values,
         });
       return values;

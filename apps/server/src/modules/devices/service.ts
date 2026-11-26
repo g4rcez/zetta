@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { tenant } from "@zetta/db";
 import { uuidv7 } from "@zetta/core/uuid";
 import type { Database } from "@zetta/db";
 import { and, asc, eq, inArray, isNull, or } from "@zetta/db/query";
@@ -135,13 +136,23 @@ export function createDeviceService(deps: { db: Database; hub: DeviceHub; maxPer
     /** Who a credential belongs to, or null (wrong, or revoked). The only way a device proves itself. */
     async authenticate(
       credential: string,
-    ): Promise<{ id: string; ownerUserId: string; name: string } | null> {
+    ): Promise<{ id: string; ownerUserId: string; name: string; workspaceId: string } | null> {
       if (!credential.startsWith(CREDENTIAL_PREFIX) || credential.length > 100) return null;
-      const [row] = await db
-        .select()
-        .from(device)
-        .where(and(eq(device.credentialHash, hashOf(credential)), isNull(device.revokedAt)));
-      return row ? { id: row.id, ownerUserId: row.ownerUserId, name: row.name } : null;
+      // A device names no workspace: it is found by its credential across them, and its request then works in the device's own.
+      const [row] = await tenant.scan(() =>
+        db
+          .select()
+          .from(device)
+          .where(and(eq(device.credentialHash, hashOf(credential)), isNull(device.revokedAt))),
+      );
+      if (!row) return null;
+      tenant.claim(row.workspaceId);
+      return {
+        id: row.id,
+        ownerUserId: row.ownerUserId,
+        name: row.name,
+        workspaceId: row.workspaceId,
+      };
     },
 
     async touch(id: string) {

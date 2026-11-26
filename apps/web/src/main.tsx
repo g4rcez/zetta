@@ -5,7 +5,12 @@ import ReactDOM from "react-dom/client";
 import Loader from "./components/loader";
 import { queryClient } from "./lib/query-client";
 import { registerServiceWorker } from "./lib/register-sw";
+import { serverOrigin } from "./lib/server-origin";
+import { installWorkspaceScope } from "./lib/workspace-scope";
 import { routeTree } from "./routeTree.gen";
+
+// Every call to the server says which workspace this tab works in (lib/workspace-scope.ts).
+installWorkspaceScope(serverOrigin());
 
 const router = createRouter({
   routeTree,

@@ -23,6 +23,7 @@ function memoryStore(): VmStore {
       if (hit) return hit;
       const r: VmRow = {
         id: uuidv7(),
+        workspaceId: "00000000-0000-7000-8000-00000000000a",
         ownerUserId: u,
         name: "Default",
         kind: "default",

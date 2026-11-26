@@ -14,7 +14,8 @@ if (!target || extra.length || (target !== "--all" && target.startsWith("-"))) {
 }
 
 const database = await resolveDatabase(ENV);
-const db = createDb({ DATABASE_URL: database.url });
+// Every person's key, in every workspace: an operator's job, outside the wall between workspaces.
+const db = createDb({ DATABASE_URL: database.url }, { wall: "off" });
 const store = await createConnectionStore(db, {
   configuration: {
     key: ENV.ZETTA_CONNECTION_KEY,

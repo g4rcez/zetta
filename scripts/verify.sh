@@ -27,7 +27,7 @@ if [ ! -f apps/web/src/routeTree.gen.ts ]; then
   echo "-- generating apps/web/src/routeTree.gen.ts"
   (cd apps/web && ZETTA_SERVER_URL="${ZETTA_SERVER_URL:-http://localhost:3000}" bunx vp build >/dev/null)
 fi
-for dir in apps/server apps/web packages/db packages/auth packages/core packages/render packages/laya packages/infra; do
+for dir in apps/server apps/web apps/cli packages/db packages/auth packages/core packages/render packages/laya packages/infra; do
   echo "-- $dir"
   (cd "$dir" && bunx tsc --noEmit)
 done

@@ -1,6 +1,7 @@
 import { getTableColumns, sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -13,6 +14,7 @@ import {
   vector,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -60,6 +62,7 @@ export const MEMORY_SCORE_DEFAULT = 50;
 export const memoryItem = zetta.table(
   "memory_item",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -99,10 +102,11 @@ export const memoryItem = zetta.table(
     ),
   },
   (t) => [
-    unique("memory_item_owner_slug").on(t.ownerUserId, t.slug),
+    unique("memory_item_id_workspace_unique").on(t.id, t.workspaceId),
+    unique("memory_item_owner_slug").on(t.workspaceId, t.ownerUserId, t.slug),
     /** A shared page is found by its slug alone, so two members cannot share the same slug. */
     uniqueIndex("memory_item_shared_slug")
-      .on(t.slug)
+      .on(t.workspaceId, t.slug)
       .where(sql`${t.type} = 'all'`),
     check("memory_item_score", sql`${t.score} between 0 and ${sql.raw(String(MEMORY_SCORE_MAX))}`),
     index("memory_item_owner_idx").on(t.ownerUserId, t.status),
@@ -120,6 +124,7 @@ export { memoryItemColumns };
 export const memoryItemTeam = zetta.table(
   "memory_item_team",
   {
+    workspaceId: inWorkspace(),
     pageId: uuid("page_id")
       .notNull()
       .references(() => memoryItem.id, cascade),
@@ -128,6 +133,13 @@ export const memoryItemTeam = zetta.table(
       .references(() => team.id, restrict),
   },
   (t) => [
+    foreignKey({
+      name: "memory_item_team_page_id_workspace_fkey",
+      columns: [t.pageId, t.workspaceId],
+      foreignColumns: [memoryItem.id, memoryItem.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.pageId, t.teamId] }),
     index("memory_item_team_team_idx").on(t.teamId),
   ],
@@ -137,6 +149,7 @@ export const memoryItemTeam = zetta.table(
 export const memoryItemProject = zetta.table(
   "memory_item_project",
   {
+    workspaceId: inWorkspace(),
     pageId: uuid("page_id")
       .notNull()
       .references(() => memoryItem.id, cascade),
@@ -145,6 +158,13 @@ export const memoryItemProject = zetta.table(
       .references(() => project.id, cascade),
   },
   (t) => [
+    foreignKey({
+      name: "memory_item_project_page_id_workspace_fkey",
+      columns: [t.pageId, t.workspaceId],
+      foreignColumns: [memoryItem.id, memoryItem.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.pageId, t.projectId] }),
     index("memory_item_project_project_idx").on(t.projectId),
   ],
@@ -157,6 +177,7 @@ export const memoryItemProject = zetta.table(
 export const memoryLink = zetta.table(
   "memory_link",
   {
+    workspaceId: inWorkspace(),
     fromPageId: uuid("from_page_id")
       .notNull()
       .references(() => memoryItem.id, cascade),
@@ -164,6 +185,13 @@ export const memoryLink = zetta.table(
     toSlug: text("to_slug").notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "memory_link_from_page_id_workspace_fkey",
+      columns: [t.fromPageId, t.workspaceId],
+      foreignColumns: [memoryItem.id, memoryItem.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.fromPageId, t.relation, t.toSlug] }),
     index("memory_link_to_idx").on(t.toSlug),
   ],
@@ -177,6 +205,7 @@ export const memoryLink = zetta.table(
 export const memoryChunk = zetta.table(
   "memory_chunk",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -205,6 +234,7 @@ export const memoryChunk = zetta.table(
 export const memoryRevision = zetta.table(
   "memory_revision",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -272,6 +302,7 @@ export type MemoryScreenInfo = {
 export const memoryJob = zetta.table(
   "memory_job",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -318,6 +349,7 @@ export const MEMORY_SUGGESTION_STATUSES = [
 export const memorySuggestion = zetta.table(
   "memory_suggestion",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -346,6 +378,13 @@ export const memorySuggestion = zetta.table(
     decidedAt: timestamp("decided_at", { withTimezone: true }),
   },
   (t) => [
+    foreignKey({
+      name: "memory_suggestion_page_id_workspace_fkey",
+      columns: [t.pageId, t.workspaceId],
+      foreignColumns: [memoryItem.id, memoryItem.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     uniqueIndex("memory_suggestion_open_once")
       .on(t.pageId, t.authorUserId)
       .where(sql`${t.status} = 'open'`),
@@ -365,6 +404,7 @@ export const MEMORY_SOURCE_STATUSES = ["current", "changed", "gone"] as const;
 export const memorySource = zetta.table(
   "memory_source",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -403,6 +443,7 @@ export type MemoryRawKind = (typeof MEMORY_RAW_KINDS)[number];
 export const memoryRaw = zetta.table(
   "memory_raw",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -421,6 +462,6 @@ export const memoryRaw = zetta.table(
   },
   (t) => [
     unique("memory_raw_page").on(t.pageId),
-    unique("memory_raw_owner_sha").on(t.ownerUserId, t.sha256),
+    unique("memory_raw_owner_sha").on(t.workspaceId, t.ownerUserId, t.sha256),
   ],
 );

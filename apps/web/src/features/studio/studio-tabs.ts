@@ -34,9 +34,9 @@ export const studioTabs = [
   },
   {
     slug: "invites",
-    label: "Invites",
+    label: "People",
     blurb:
-      "Invite people to this server, cancel pending invitations and manage who is in each team.",
+      "Who is in this workspace and as what: roles, invitations, shared Chiefs and the people of each team.",
   },
   {
     slug: "phone",

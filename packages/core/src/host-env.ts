@@ -59,6 +59,9 @@ export const HOST_ENV: Readonly<Record<string, HostEnvEntry>> = {
     "Size of the database pool, tied to the database server's own limit.",
   ),
   ZETTA_ROLE: host("Which part of the system this process runs (all, api or worker)."),
+  ZETTA_MODE: bootstrap(
+    "How this server is run: local (one's own) or app (many organizations, invite only). The database connection depends on it.",
+  ),
   ZETTA_EVENT_BUS: host("How instances tell each other about changes (local or through Postgres)."),
   ZETTA_INSTANCE_NAME: host("The name this process registers under."),
   ZETTA_INTERNAL_URL: host("The address a container uses to reach this server."),

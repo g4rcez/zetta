@@ -195,7 +195,7 @@ describe("createApp", () => {
         "GET, POST, PUT, PATCH, DELETE, OPTIONS",
       );
       expect(response.headers.get("access-control-allow-headers")).toBe(
-        "Content-Type, Authorization",
+        "Content-Type, Authorization, X-Zetta-Workspace",
       );
       expect(fixture.authRequests).toHaveLength(0);
       expect(fixture.sessionLookups).toHaveLength(0);

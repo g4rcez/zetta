@@ -2,15 +2,18 @@ import { sql } from "drizzle-orm";
 import {
   check,
   customType,
+  foreignKey,
   index,
   integer,
   jsonb,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -56,6 +59,7 @@ export type MailboxConfig = {
 export const mailbox = zetta.table(
   "mailbox",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -87,7 +91,9 @@ export const mailbox = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("mailbox_id_workspace_unique").on(t.id, t.workspaceId),
     uniqueIndex("mailbox_owner_kind_address_unique").on(
+      t.workspaceId,
       t.ownerUserId,
       t.kind,
       sql`lower(${t.address})`,
@@ -124,6 +130,7 @@ export const MAILBOX_MESSAGE_ATTACHMENTS = ["none", "some"] as const;
 export const mailboxMessage = zetta.table(
   "mailbox_message",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -154,6 +161,13 @@ export const mailboxMessage = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "mailbox_message_mailbox_id_workspace_fkey",
+      columns: [t.mailboxId, t.workspaceId],
+      foreignColumns: [mailbox.id, mailbox.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     uniqueIndex("mailbox_message_provider_ref_unique").on(t.mailboxId, t.providerRef),
     index("mailbox_message_thread_idx").on(t.mailboxId, t.threadKey, t.date),
     index("mailbox_message_id_idx").on(t.mailboxId, t.messageId),

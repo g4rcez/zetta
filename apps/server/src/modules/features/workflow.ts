@@ -259,6 +259,8 @@ const NO_RETRY_CODES = new Set([
   "auth_required",
   "not_installed",
   "no_safe_mode",
+  "host_refused",
+  "workspace_quota",
   "quota",
   "cancelled",
   "BOT_NOT_READY",

@@ -228,15 +228,22 @@ type RowProps = {
   notice: string | undefined;
   onSave: (item: SettingItem, value: SettingValue) => void;
   onReset: (item: SettingItem) => void;
+  /** Shown, not changed: the setting is decided for the whole server and the person looking is not the one who decides it. */
+  locked: boolean;
 };
-function SettingRow({ item, busy, error, notice, onSave, onReset }: RowProps) {
+
+/** A setting of the whole server, and every security policy, is changed only by the person who set the server up. */
+export const rootOnly = (item: Pick<SettingItem, "scope" | "sensitive">) =>
+  item.scope === "installation" || item.sensitive;
+
+function SettingRow({ item, busy, error, notice, onSave, onReset, locked }: RowProps) {
   const [draft, setDraft] = useState<Draft>(() => initialDraft(item));
   const [step, setStep] = useState<Step>("edit");
   const dirty = !sameDraft(draft, initialDraft(item));
   const empty = item.type === "integer" && String(draft).trim() === "";
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!dirty || empty) return;
+    if (!dirty || empty || locked) return;
     // A security policy changes the behaviour for everyone at once: it asks first.
     if (item.sensitive && step === "edit") return setStep("confirm");
     onSave(item, toValue(item, draft));
@@ -256,7 +263,7 @@ function SettingRow({ item, busy, error, notice, onSave, onReset }: RowProps) {
         <Control
           item={item}
           draft={draft}
-          disabled={busy || step === "confirm"}
+          disabled={busy || locked || step === "confirm"}
           set={(d) => setDraft(d)}
         />
         <p className="text-xs text-muted-foreground">
@@ -284,6 +291,10 @@ function SettingRow({ item, busy, error, notice, onSave, onReset }: RowProps) {
               </Button>
             </div>
           </div>
+        ) : locked ? (
+          <p className="text-xs text-pretty text-muted-foreground">
+            Decided for the whole server. Only the person who set the server up changes it.
+          </p>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" size="sm" disabled={busy || !dirty || empty}>
@@ -367,6 +378,8 @@ function Filters({ search, setSearch }: FiltersProps) {
 type PageProps = {
   /** Administrators only: anyone else sees a sentence and nothing is asked of the server. */
   admin: boolean;
+  /** The person who set the server up. Another administrator changes only what a workspace may have of its own. */
+  root: boolean;
   search: SettingsSearch;
   setSearch: (next: SettingsSearch, how: How) => void;
 };
@@ -375,7 +388,7 @@ type PageProps = {
  * The server settings of the installation, for administrators: every key of the registry (@zetta/core/settings) grouped, with the value
  * that counts and where it comes from, saved one key at a time. The filters live in the address (`search`).
  */
-export function ServerSettingsPage({ admin, search, setSearch }: PageProps) {
+export function ServerSettingsPage({ admin, root, search, setSearch }: PageProps) {
   const list = useQuery({ ...settingsQueries.list(), enabled: admin });
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -429,6 +442,12 @@ export function ServerSettingsPage({ admin, search, setSearch }: PageProps) {
   return (
     <div className="space-y-6">
       {intro}
+      {!root && (
+        <p className="text-sm text-pretty text-muted-foreground">
+          You administer this workspace. The settings of the whole server and its security policy
+          are shown here and changed by the person who set the server up.
+        </p>
+      )}
       <UpdateCheckSetting onError={setUpdateError} />
       {updateError && (
         <p role="alert" className="text-sm text-destructive">
@@ -464,6 +483,7 @@ export function ServerSettingsPage({ admin, search, setSearch }: PageProps) {
                   busy={busy}
                   error={errors[s.key]}
                   notice={notice?.key === s.key ? notice.text : undefined}
+                  locked={!root && rootOnly(s)}
                   onSave={(item, value) =>
                     run(item, () => settingsApi.save(item.key, value), "Saved.")
                   }

@@ -6,10 +6,12 @@ import {
   jsonb,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -28,6 +30,7 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
 export const agendaItem = zetta.table(
   "agenda_item",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -79,7 +82,7 @@ export const agendaItem = zetta.table(
     index("agenda_item_created_by_bot_id_idx").on(t.createdByBotId),
     index("agenda_owner_start_idx").on(t.ownerUserId, t.startAt),
     uniqueIndex("agenda_owner_google_event")
-      .on(t.ownerUserId, t.googleAccount, t.googleEventId)
+      .on(t.workspaceId, t.ownerUserId, t.googleAccount, t.googleEventId)
       .where(sql`${t.googleEventId} is not null`),
     index("agenda_remind_idx").on(t.remindedAt, t.remindAt),
     index("agenda_sync_state_idx").on(t.ownerUserId, t.syncState),
@@ -90,10 +93,11 @@ export const agendaItem = zetta.table(
 export const agendaSync = zetta.table(
   "agenda_sync",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
-    ownerUserId: owner().unique(),
+    ownerUserId: owner(),
     enabled: boolean("enabled").default(false).notNull(),
     pushByDefault: boolean("push_by_default").default(false).notNull(),
     /** Cursor from before accounts existed. The first sync moves it into `syncTokens` for the first account. */
@@ -106,5 +110,9 @@ export const agendaSync = zetta.table(
     nextSyncAt: timestamp("next_sync_at", { withTimezone: true }).defaultNow().notNull(),
     createdAt: created(),
   },
-  (t) => [index("agenda_sync_due_idx").on(t.enabled, t.nextSyncAt)],
+  (t) => [
+    // One sync per person in each workspace.
+    unique("agenda_sync_workspace_owner_unique").on(t.workspaceId, t.ownerUserId),
+    index("agenda_sync_due_idx").on(t.enabled, t.nextSyncAt),
+  ],
 );

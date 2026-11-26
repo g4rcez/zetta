@@ -6,6 +6,7 @@ import { errorMessage } from "../chat/chat-client";
 import { identityQueries } from "../identity/identity-queries";
 import { installationApi, installationQueries } from "../onboarding/installation-api";
 import { updatesQueries } from "../updates/updates-api";
+import { isRootIdentity } from "@/lib/identity-client";
 
 /**
  * "Check for updates": whether the server looks once a day for a newer version. Only an administrator changes it, and it is saved at once.
@@ -16,7 +17,7 @@ export function UpdateCheckSetting({ onError }: { onError: (message: string) => 
   const { data: saved } = useQuery(installationQueries.get());
   const { data: identity } = useQuery(identityQueries.status());
   const { data: version } = useQuery(updatesQueries.version());
-  const admin = identity?.state === "active" && identity.isAdmin;
+  const admin = isRootIdentity(identity);
   const [busy, setBusy] = useState(false);
   const on = saved?.updateCheck !== "off";
   // The operator can turn the check off for the whole server (ZETTA_UPDATE_CHECK=off): the setting then has no effect, and it says so.

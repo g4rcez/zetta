@@ -1,5 +1,7 @@
 import { useForm } from "@tanstack/react-form";
-import { Button, Input } from "@/components/ui";
+import { type InviteRole, WORKSPACE_ROLE_LABELS } from "@zetta/core/workspace";
+import { BotSelect, type BotSelectBot } from "@/components/bot-select";
+import { Button, Input, Select } from "@/components/ui";
 import { useEffect, useRef, useState } from "react";
 import z from "zod";
 
@@ -11,14 +13,27 @@ import { formatDateTime } from "@/features/preferences/time-format";
 
 type DisplayedInvitation = Omit<IssuedInvitation, "token"> & { token: string | null };
 
+const ONLY_MEMBER: readonly InviteRole[] = ["member"];
+const NO_BOTS: readonly BotSelectBot[] = [];
+const ROLE_HELP: Record<InviteRole, string> = {
+  member: "Uses the workspace: their own bots, and the ones shared with the team.",
+  admin: "Also invites people, sets roles and changes the workspace's settings.",
+};
+
 /** `onChange` runs after an invitation is created or revoked, so a list of pending invitations can reload. */
 export function InvitationManager({
   onChange,
   cancelledId,
+  roles = ONLY_MEMBER,
+  bots = NO_BOTS,
 }: {
   onChange?: () => void;
   /** An invitation cancelled elsewhere (the pending list). If it is the one shown here, this form lets go of it. */
   cancelledId?: string | undefined;
+  /** The roles this person may give. With one role there is nothing to choose. */
+  roles?: readonly InviteRole[];
+  /** The person's own bots: one of them can become the new person's Chief. */
+  bots?: readonly BotSelectBot[];
 } = {}) {
   const tf = useTimeFormat();
   const [invitation, setInvitation] = useState<DisplayedInvitation | null>(null);
@@ -40,11 +55,19 @@ export function InvitationManager({
   }, [invitation?.token]);
 
   const form = useForm({
-    defaultValues: { intendedEmail: "", intendedUserId: "" },
+    defaultValues: {
+      intendedEmail: "",
+      intendedUserId: "",
+      role: "member" as InviteRole,
+      // Empty: no bot is shared, and Zetta creates a Chief that belongs to the new person.
+      chiefBotId: "",
+    },
     validators: {
       onSubmit: z.object({
         intendedEmail: z.email("Enter the invited account's email address"),
         intendedUserId: z.string(),
+        role: z.enum(["admin", "member"]),
+        chiefBotId: z.string(),
       }),
     },
     onSubmit: async ({ value }) => {
@@ -57,6 +80,8 @@ export function InvitationManager({
         const result = await identityClient.issue({
           intendedEmail: value.intendedEmail,
           ...(userId ? { intendedUserId: userId } : {}),
+          ...(value.role === "member" ? {} : { role: value.role }),
+          ...(value.chiefBotId ? { chiefBotId: value.chiefBotId } : {}),
         });
         setInvitation(result);
         setFeedback("Invitation created. Copy the token before hiding it.");
@@ -162,6 +187,49 @@ export function InvitationManager({
                   />
                 )}
               </form.Field>
+              {roles.length > 1 && (
+                <form.Field name="role">
+                  {(field) => (
+                    <div className="space-y-1">
+                      <Select
+                        title="Role"
+                        name={field.name}
+                        required={false}
+                        value={field.state.value}
+                        options={roles.map((role) => ({
+                          value: role,
+                          label: WORKSPACE_ROLE_LABELS[role],
+                        }))}
+                        onChange={(event) => field.handleChange(event.target.value as InviteRole)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {ROLE_HELP[field.state.value]}
+                      </p>
+                    </div>
+                  )}
+                </form.Field>
+              )}
+              {bots.length > 0 && (
+                <form.Field name="chiefBotId">
+                  {(field) => (
+                    <div className="space-y-1">
+                      <BotSelect
+                        label="Their Chief"
+                        name={field.name}
+                        placeholder="A Chief of their own"
+                        bots={bots}
+                        value={field.state.value}
+                        onChange={(botId) => field.handleChange(botId)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        {field.state.value
+                          ? "They talk to this bot of yours as their Chief. It stays yours: what you change in it changes for them."
+                          : "Leave it empty and Zetta creates a Chief that belongs to them. Or pick one of your bots."}
+                      </p>
+                    </div>
+                  )}
+                </form.Field>
+              )}
               <Button type="submit" disabled={pending || revoking || invitation !== null}>
                 {pending ? "Creating invitation…" : "Create invitation"}
               </Button>

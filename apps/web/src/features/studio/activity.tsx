@@ -30,6 +30,8 @@ const KIND: Record<string, string> = {
   connection: "An account changed",
   learning_run: "A bot looked back at its work",
   voice_call: "A voice call with a bot",
+  setting: "A server setting changed",
+  workspace: "The workspace's people changed",
 };
 const OUTCOME: Record<string, string> = {
   ok: "worked",

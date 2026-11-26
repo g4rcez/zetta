@@ -31,6 +31,7 @@ import { parseActivityView } from "./activity-view";
 import { parsePhoneSearch, type PhoneSearch } from "../phone/phone-filters";
 import { parsePluginsSearch, type PluginsSearch } from "./plugins-filters";
 import { parseSettingsSearch, type SettingsSearch } from "./settings-filters";
+import { isRootIdentity } from "@/lib/identity-client";
 const Activity = lazy(() => import("./activity").then((m) => ({ default: m.Activity })));
 const Computer = lazy(() => import("./computer").then((m) => ({ default: m.Computer })));
 const Invites = lazy(() => import("./invites").then((m) => ({ default: m.Invites })));
@@ -63,7 +64,7 @@ const ICON: Record<Tab, Icon> = {
   Computer: DevicesIcon,
   Plugins: PlugIcon,
   "Team snapshots": UsersIcon,
-  Invites: UserPlusIcon,
+  People: UserPlusIcon,
   "Phone numbers": PhoneIcon,
   Voice: MicrophoneIcon,
   "Server settings": GearSixIcon,
@@ -159,10 +160,11 @@ export function StudioPage() {
                 <Plugins onError={setError} search={pluginsSearch} setSearch={setPluginsSearch} />
               )}
               {tab === "Team snapshots" && <Snapshots onError={setError} />}
-              {tab === "Invites" && <Invites isAdmin={identity.isAdmin} />}
+              {tab === "People" && <Invites isAdmin={identity.isAdmin} />}
               {tab === "Phone numbers" && (
                 <PhoneNumbersPage
                   admin={identity.isAdmin}
+                  root={isRootIdentity(identity)}
                   search={phoneSearch}
                   setSearch={setPhoneSearch}
                 />
@@ -171,6 +173,7 @@ export function StudioPage() {
               {tab === "Server settings" && (
                 <ServerSettingsPage
                   admin={identity.isAdmin}
+                  root={isRootIdentity(identity)}
                   search={settingsSearch}
                   setSearch={setSettingsSearch}
                 />

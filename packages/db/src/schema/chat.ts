@@ -1,22 +1,25 @@
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
   text,
   timestamp,
+  type AnyPgColumn,
   unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { OUTPUT_STYLE_KEYS, outputStyle } from "./output-styles";
 import { searchVector } from "./search";
+import { SHARED_ACCOUNT } from "@zetta/core/engine-accounts";
 
 const restrict = { onDelete: "restrict", onUpdate: "restrict" } as const;
 const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
@@ -40,6 +43,7 @@ export type BotOrigin = {
 export const folder = zetta.table(
   "folder",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -53,7 +57,7 @@ export const folder = zetta.table(
   },
   (table) => [
     index("folder_parent_id_idx").on(table.parentId),
-    unique("folder_owner_name_unique").on(table.ownerUserId, table.name),
+    unique("folder_owner_name_unique").on(table.workspaceId, table.ownerUserId, table.name),
     check("folder_name_check", sql`length(btrim(${table.name})) between 1 and 80`),
   ],
 );
@@ -61,6 +65,7 @@ export const folder = zetta.table(
 export const bot = zetta.table(
   "bot",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -138,6 +143,9 @@ export const bot = zetta.table(
     chatSearchLimit: integer("chat_search_limit"),
     // Code access the owner granted this bot: a persistent per-user code directory where it can run git, edit files and push. On by default.
     codeAccess: boolean("code_access").default(true).notNull(),
+    // Whose agent account runs this bot for someone who is not its owner (@zetta/core/engine-accounts): the person who asks, or, in a
+    // room, its owner.
+    sharedAccount: text("shared_account", { enum: SHARED_ACCOUNT }).default("asker").notNull(),
     // Who a commit of this bot is signed as: the server's git config (default), the bot's own address, the owner's account, or `commit_email`.
     commitIdentity: text("commit_identity", { enum: ["git-config", "bot", "account", "custom"] })
       .default("git-config")
@@ -154,11 +162,12 @@ export const bot = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    unique("bot_id_workspace_unique").on(table.id, table.workspaceId),
     index("bot_folder_id_idx").on(table.folderId),
     index("bot_owner_idx").on(table.ownerUserId),
     // At most one personal chief per user, stable across folder moves.
     uniqueIndex("bot_one_chief_per_owner")
-      .on(table.ownerUserId)
+      .on(table.workspaceId, table.ownerUserId)
       .where(sql`${table.kind} = 'chief'`),
     check(
       "bot_chief_private_check",
@@ -192,7 +201,7 @@ export const bot = zetta.table(
       "bot_output_style_check",
       sql`(${table.outputStyle} = 'custom') = (${table.outputStyleId} is not null)`,
     ),
-    uniqueIndex("bot_slug_key").on(table.slug),
+    uniqueIndex("bot_slug_key").on(table.workspaceId, table.slug),
     check(
       "bot_slug_check",
       sql`${table.slug} ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$' and length(${table.slug}) <= 48 and ${table.slug} !~ '^pg-'`,
@@ -203,6 +212,7 @@ export const bot = zetta.table(
 export const conversation = zetta.table(
   "conversation",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -258,6 +268,7 @@ export const conversation = zetta.table(
 export const message = zetta.table(
   "message",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -291,6 +302,7 @@ export const message = zetta.table(
     ownerInstance: uuid("owner_instance"),
   },
   (table) => [
+    unique("message_id_workspace_unique").on(table.id, table.workspaceId),
     index("message_running_idx")
       .on(table.ownerUserId, table.botId)
       .where(sql`${table.status} = 'running'`),
@@ -310,6 +322,7 @@ export const message = zetta.table(
 export const messageRevision = zetta.table(
   "message_revision",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -324,6 +337,13 @@ export const messageRevision = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      name: "message_revision_message_id_workspace_fkey",
+      columns: [table.messageId, table.workspaceId],
+      foreignColumns: [message.id, message.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     index("message_revision_message_id_idx").on(table.messageId, table.createdAt),
     check("message_revision_content_check", sql`length(${table.content}) <= 65536`),
   ],
@@ -348,6 +368,7 @@ export type ChatQueueStatus = (typeof CHAT_QUEUE_STATUSES)[number];
 export const chatQueue = zetta.table(
   "chat_queue",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -389,6 +410,7 @@ export const chatQueue = zetta.table(
 export const botRevision = zetta.table(
   "bot_revision",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -403,6 +425,13 @@ export const botRevision = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      name: "bot_revision_bot_id_workspace_fkey",
+      columns: [table.botId, table.workspaceId],
+      foreignColumns: [bot.id, bot.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     index("bot_revision_changed_by_user_id_idx").on(table.changedByUserId),
     unique("bot_revision_unique").on(table.botId, table.version),
   ],
@@ -425,6 +454,7 @@ export const CHAT_SEARCH_LIMIT_MAX = 10;
 export const conversationSummary = zetta.table(
   "conversation_summary",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -467,6 +497,7 @@ export const conversationSummary = zetta.table(
 export const goalLoop = zetta.table(
   "goal_loop",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

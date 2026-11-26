@@ -11,6 +11,7 @@ const BLOCKED: readonly HarnessErrorCode[] = [
   "auth_required",
   "not_installed",
   "no_safe_mode",
+  "host_refused",
 ];
 export const blocksHarness = (e: unknown): e is HarnessError =>
   e instanceof HarnessError && BLOCKED.includes(e.code);
@@ -30,6 +31,8 @@ const REASON: Record<string, string> = {
   auth_required: "is not signed in",
   not_installed: "is not installed",
   no_safe_mode: "cannot run here without code access",
+  host_refused: "cannot run outside a container here",
+  workspace_quota: "has no runs left this month in this workspace",
 };
 const notice = (u: FallbackUse) =>
   `${label(u.from)} ${REASON[u.reason]} · answering with ${label(u.to)}`;

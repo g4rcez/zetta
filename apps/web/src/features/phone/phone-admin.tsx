@@ -520,6 +520,8 @@ function NumbersArea({ search, setSearch }: AreaProps) {
 type PageProps = {
   /** Administrators only: anyone else sees a sentence and nothing is asked of the server. */
   admin: boolean;
+  /** The person who set the server up: the providers and their keys are theirs to change. */
+  root: boolean;
   search: PhoneSearch;
   setSearch: (next: PhoneSearch, how: How) => void;
 };
@@ -529,7 +531,7 @@ type PageProps = {
  * at which provider, in what state; approve, release, reassign; attach one that is already owned) and the do-not-call list. The
  * filters live in the address (`search`).
  */
-export function PhoneNumbersPage({ admin, search, setSearch }: PageProps) {
+export function PhoneNumbersPage({ admin, root, search, setSearch }: PageProps) {
   if (!admin)
     return (
       <p className="text-sm text-muted-foreground">
@@ -538,7 +540,14 @@ export function PhoneNumbersPage({ admin, search, setSearch }: PageProps) {
     );
   return (
     <div className="space-y-8">
-      <PhoneSetup />
+      {root ? (
+        <PhoneSetup />
+      ) : (
+        <p className="text-sm text-pretty text-muted-foreground">
+          The phone providers, their keys and who can ask for a number are set for the whole server
+          by the person who set it up.
+        </p>
+      )}
       <NumbersArea search={search} setSearch={setSearch} />
     </div>
   );

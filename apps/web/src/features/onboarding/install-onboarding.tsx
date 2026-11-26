@@ -12,11 +12,12 @@ import {
 } from "@phosphor-icons/react";
 import { Alert } from "@g4rcez/components/alert";
 import z from "zod";
+import { ACCOUNT_ENGINE_LABELS, isAccountEngine } from "@zetta/core/engine-accounts";
 
 import { Button, Input, Progress } from "@/components/ui";
 import { Logo } from "@/components/logo";
 import { invalidateAuthGuard } from "@/lib/auth-guard";
-import { getIdentityError, identityClient } from "@/lib/identity-client";
+import { getIdentityError, identityClient, isRootIdentity } from "@/lib/identity-client";
 import { EngineStep, IdentityStep, InstructionsStep, type Draft } from "../bots/bot-onboarding";
 import { LayaSwitch } from "../studio/laya-switch";
 import { Plugins } from "../studio/plugins";
@@ -26,6 +27,7 @@ import { FRESH_INTERVIEW, type InterviewState } from "../bots/interview-flow";
 import { call, chatClient, errorMessage, type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { claudeApi } from "../claude/claude-api";
+import { EngineAccountArea } from "../engine-accounts/agent-accounts";
 import { orgQueries } from "../org/org-api";
 import { type AvatarValue } from "@/components/bot-avatar";
 import { installationApi, installationQueries, type NetworkMode } from "./installation-api";
@@ -220,13 +222,15 @@ export function InstallOnboarding() {
       const status = await identityClient.status();
       if (status.state === "active") {
         const installation = await qc.fetchQuery({ ...installationQueries.get(), staleTime: 0 });
-        if (!status.isAdmin) {
+        if (!isRootIdentity(status)) {
           const { preferences } = await call<{ preferences: { memberOnboarding?: string } }>(
             "/api/preferences",
           );
           if (preferences.memberOnboarding !== "pending")
             return void navigate({ to: "/chat/{-$chatId}", replace: true });
-          await loadChief();
+          const theirs = await loadChief();
+          // A Chief someone shared with them is that person's bot, already set up: there is nothing of their own to fill in here.
+          if (!theirs.canEdit) return void (await finishMember(theirs));
           if (alive) {
             setMember(true);
             show(requested && MEMBER_STEPS.includes(requested) ? requested : "identity");
@@ -591,7 +595,18 @@ export function InstallOnboarding() {
           />
         )}
         {draft && step === "engine" && (
-          <EngineStep draft={draft} set={patchDraft} effort={effort} setEffort={setEffort} />
+          <>
+            <EngineStep draft={draft} set={patchDraft} effort={effort} setEffort={setEffort} />
+            {isAccountEngine(draft.harness) && (
+              <section aria-label="Your account for this engine" className="space-y-2">
+                <h2 className="text-sm font-medium">Your account for this engine</h2>
+                <EngineAccountArea
+                  engine={draft.harness}
+                  label={ACCOUNT_ENGINE_LABELS[draft.harness]}
+                />
+              </section>
+            )}
+          </>
         )}
         {draft && step === "instructions" && (
           <InstructionsStep

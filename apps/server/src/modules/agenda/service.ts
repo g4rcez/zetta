@@ -243,7 +243,7 @@ export function createAgenda(db: Database) {
           pushByDefault: v.pushByDefault ?? false,
           pushAccount: v.pushAccount?.trim().toLowerCase() || null,
         })
-        .onConflictDoUpdate({ target: agendaSync.ownerUserId, set });
+        .onConflictDoUpdate({ target: [agendaSync.workspaceId, agendaSync.ownerUserId], set });
       return this.syncSettings(a);
     },
   };

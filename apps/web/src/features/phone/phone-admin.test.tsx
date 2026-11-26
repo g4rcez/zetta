@@ -171,7 +171,7 @@ afterEach(async () => {
 const settle = (ms = 60) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
 
 type SearchCall = { next: PhoneSearch; how: string };
-async function mount(search: PhoneSearch = {}, admin = true) {
+async function mount(search: PhoneSearch = {}, admin = true, isRoot = admin) {
   const { createMemoryHistory, createRootRoute, createRouter, RouterProvider } =
     await import("@tanstack/react-router");
   const { PhoneNumbersPage } = await import("./phone-admin");
@@ -184,6 +184,7 @@ async function mount(search: PhoneSearch = {}, admin = true) {
       <QueryClientProvider client={queryClient}>
         <PhoneNumbersPage
           admin={admin}
+          root={isRoot}
           search={current}
           setSearch={(next, how) => {
             calls.push({ next, how });
@@ -280,7 +281,7 @@ describe("who sees the page", () => {
       routeTree: createRootRoute({
         component: () => (
           <QueryClientProvider client={queryClient}>
-            <PhoneNumbersPage admin search={{}} setSearch={() => {}} />
+            <PhoneNumbersPage admin root search={{}} setSearch={() => {}} />
           </QueryClientProvider>
         ),
       }),
@@ -347,6 +348,16 @@ describe("setup on the page", () => {
     );
     expect(win.document.querySelectorAll("[data-status].inline-flex")).toHaveLength(2);
     expect(win.document.querySelector("img[data-provider-logo=telnyx]")).not.toBeNull();
+  });
+  test("an administrator who did not set the server up manages numbers, and sees no provider setup", async () => {
+    await mount({}, true, false);
+    const html = win.document.body.innerHTML;
+    expect(html).not.toContain('aria-label="Telnyx"');
+    expect(html).not.toContain('aria-label="How people get numbers"');
+    expect(win.document.body.textContent).toContain(
+      "set for the whole server by the person who set it up",
+    );
+    expect(html).toContain("<table");
   });
   test("Disconnect from the page sends one PATCH and no key in the open", async () => {
     await mount();

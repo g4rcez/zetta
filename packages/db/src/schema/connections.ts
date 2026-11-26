@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bytea,
   check,
   foreignKey,
@@ -9,10 +8,12 @@ import {
   primaryKey,
   text,
   timestamp,
+  type AnyPgColumn,
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 
@@ -79,6 +80,7 @@ function envelopeChecks(
 export const connection = zetta.table(
   "connection",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id").primaryKey(),
     ownerUserId: text("owner_user_id")
       .notNull()
@@ -145,6 +147,7 @@ export const connectionNonce = zetta.table(
 export const connectionCredential = zetta.table(
   "connection_credential",
   {
+    workspaceId: inWorkspace(),
     connectionId: uuid("connection_id").notNull(),
     credentialVersion: integer("credential_version").notNull(),
     ownerUserId: text("owner_user_id").notNull(),
@@ -264,6 +267,7 @@ export const connectionKeyCheck = zetta.table(
 export const connectionMutationReceipt = zetta.table(
   "connection_mutation_receipt",
   {
+    workspaceId: inWorkspace(),
     ownerUserId: text("owner_user_id").notNull(),
     operationId: uuid("operation_id").notNull(),
     operation: text("operation", {

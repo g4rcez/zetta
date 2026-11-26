@@ -11,13 +11,14 @@ Zetta is a Bun and TypeScript workspace: React with TanStack Router in the web a
 | [`apps/web`](../../../apps/web)                 | The web app people use: chat, bots, tasks, routines, workflows, Studio.                            |
 | [`apps/server`](../../../apps/server)           | The API and everything that runs: bot turns, routines, workflows, plugins, browsers and computers. |
 | [`apps/desktop`](../../../apps/desktop)         | The desktop app. It opens a Zetta server, or runs a local one for one person.                      |
-| [`apps/cli`](../../../apps/cli)                 | The `zetta` command line.                                                                          |
+| [`apps/cli`](../../../apps/cli)                 | The `zetta` command line: `setup`, and `infra` from `packages/infra`. Compiles to one file.        |
 | [`apps/landing`](../../../apps/landing)         | The public site, [zettabot.app](https://zettabot.app).                                             |
 | [`packages/db`](../../../packages/db)           | The database schema, the migrations and the Postgres that ships inside Zetta.                      |
 | [`packages/auth`](../../../packages/auth)       | Sign-in, sessions and invitations.                                                                 |
 | [`packages/core`](../../../packages/core)       | Types and rules the web app and the server share, such as the settings registry.                   |
 | [`packages/harness`](../../../packages/harness) | The agents a bot can run on and the models of each.                                                |
 | [`packages/laya`](../../../packages/laya)       | The built-in decision model.                                                                       |
+| [`packages/infra`](../../../packages/infra)     | Installs Zetta on a server. One folder per kind of infra (`vps`: one host) beside a shared `core`. |
 | [`packages/ui`](../../../packages/ui)           | Shared interface components and styles.                                                            |
 
 The server entry point is [`apps/server/src/index.ts`](../../../apps/server/src/index.ts), and [`services.ts`](../../../apps/server/src/services.ts) wires the database, sign-in and every domain service.

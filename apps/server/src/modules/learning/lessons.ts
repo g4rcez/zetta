@@ -451,7 +451,7 @@ export function createLessons(db: Database, deps: { memory: Memory }) {
         .insert(learningPolicy)
         .values({ ownerUserId: owner, ...patch })
         .onConflictDoUpdate({
-          target: learningPolicy.ownerUserId,
+          target: [learningPolicy.workspaceId, learningPolicy.ownerUserId],
           set: { ...patch, updatedAt: new Date() },
         });
       return this.policy(owner);

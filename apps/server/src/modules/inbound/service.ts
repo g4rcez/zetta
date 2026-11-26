@@ -668,7 +668,7 @@ export function createInbound(
           nextPollAt: new Date(),
         })
         .onConflictDoUpdate({
-          target: [inboundRoute.ownerUserId, inboundRoute.pluginId],
+          target: [inboundRoute.workspaceId, inboundRoute.ownerUserId, inboundRoute.pluginId],
           targetWhere: isNull(inboundRoute.mailboxId),
           set: {
             botId,

@@ -1,6 +1,5 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq } from "@zetta/db/query";
-import { bot } from "@zetta/db/schema/chat";
+import { and, eq } from "@zetta/db/query";
 import { skill } from "@zetta/db/schema/skills";
 import { z } from "zod";
 
@@ -23,6 +22,7 @@ import { ImportError } from "./errors";
 import type { GrokBot } from "./grok-source";
 import { matchIntegrations, type PluginRef } from "./integrations-match";
 import { authorPaused, scheduleFromRoutine } from "./schedule-from-cron";
+import { chiefFor } from "../../workspaces/chief";
 
 /**
  * Turns a marketplace listing into a `BotImportDraft`: the facts (name, schedules, integrations, picture) come straight from the listing,
@@ -406,13 +406,8 @@ export function createAnalyzerFor(db: Database): Analyzer {
   return createAnalyzer({
     cli: runCli,
     chief: async (owner) => {
-      const [chief] = await db
-        .select({ harness: bot.harness, model: bot.model })
-        .from(bot)
-        .where(and(eq(bot.ownerUserId, owner), eq(bot.kind, "chief"), eq(bot.archived, false)))
-        .orderBy(asc(bot.createdAt))
-        .limit(1);
-      return chief ?? null;
+      const chief = await chiefFor(db, owner);
+      return chief ? { harness: chief.harness, model: chief.model } : null;
     },
     plugins: () => listPlugins().map((p) => ({ id: p.id, name: p.name })),
     existingSkillNames: async (owner) =>

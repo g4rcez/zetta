@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
-import { text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { foreignKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { task } from "./tasks";
 
@@ -18,6 +19,7 @@ export type WorkWatchKind = (typeof WORK_WATCH_KINDS)[number];
 export const workWatch = zetta.table(
   "work_watch",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -32,5 +34,14 @@ export const workWatch = zetta.table(
     verdict: text("verdict").default("").notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("work_watch_task_kind_unique").on(t.taskId, t.kind)],
+  (t) => [
+    foreignKey({
+      name: "work_watch_task_id_workspace_fkey",
+      columns: [t.taskId, t.workspaceId],
+      foreignColumns: [task.id, task.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
+    uniqueIndex("work_watch_task_kind_unique").on(t.taskId, t.kind),
+  ],
 );

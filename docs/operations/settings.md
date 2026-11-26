@@ -256,6 +256,12 @@ Optional · not secret
 
 Several servers on one database (docs/operations/scaling.md). ZETTA_ROLE is what this process does: all (default), api (serves requests, never starts bot turns) or worker. ZETTA_EVENT_BUS is how live updates reach the other servers: local (default for all) or pg (default otherwise).
 
+### `ZETTA_MODE`
+
+Optional · not secret
+
+How this server is run (docs/decisions/workspaces.md): local (default) is a server of one's own, where work that names no workspace runs in the first one; app is one server for many organizations, invite only, that refuses to start unless the database keeps workspaces apart.
+
 ### `ZETTA_INSTANCE_NAME`
 
 Optional · not secret

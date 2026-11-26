@@ -81,7 +81,7 @@ describe("settings routes", () => {
         default: unknown;
       }[];
     };
-    expect(body.settings.length).toBe(22);
+    expect(body.settings.length).toBe(23);
     expect(body.groups.limits).toBeTruthy();
     const by = Object.fromEntries(body.settings.map((s) => [s.key, s]));
     expect(by.harnessMax).toMatchObject({

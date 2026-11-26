@@ -15,6 +15,7 @@ import { Badge, ConfirmButton, Empty, list, listItem } from "../shared/ui";
 import { Alert } from "@g4rcez/components/alert";
 import { connectionsQueries, harnessQueries, useLoadError, type Harness } from "./studio-queries";
 import { formText } from "../shared/form-data";
+import { EngineAccountArea } from "../engine-accounts/agent-accounts";
 
 const PROVIDER_NAME: Record<Provider, string> = {
   anthropic: "Anthropic",
@@ -78,7 +79,7 @@ function Harnesses({ onError }: { onError: (m: string) => void }) {
   return (
     <Section
       title="Bot engines"
-      description="The tools that run your bots. Each bot picks one in its settings."
+      description="The tools that run your bots, and your own account for each. Each bot picks an engine in its settings."
     >
       {!rows && (
         <p role="status" className="text-sm">
@@ -89,17 +90,20 @@ function Harnesses({ onError }: { onError: (m: string) => void }) {
         {rows?.map((h) => {
           const s = HARNESS_STATUS[h.status];
           return (
-            <li key={h.harness} className={`${listItem} flex items-start justify-between gap-4`}>
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {h.label}
-                  {h.version && (
-                    <span className="font-normal text-muted-foreground"> · {h.version}</span>
-                  )}
-                </p>
-                <p className="break-words text-muted-foreground">{harnessGuidance(h)}</p>
+            <li key={h.harness} className={`${listItem} space-y-3`}>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    {h.label}
+                    {h.version && (
+                      <span className="font-normal text-muted-foreground"> · {h.version}</span>
+                    )}
+                  </p>
+                  <p className="break-words text-muted-foreground">{harnessGuidance(h)}</p>
+                </div>
+                <Badge tone={s.tone}>{s.label}</Badge>
               </div>
-              <Badge tone={s.tone}>{s.label}</Badge>
+              <EngineAccountArea engine={h.harness} label={h.label} />
             </li>
           );
         })}

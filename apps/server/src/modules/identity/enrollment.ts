@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { uuidv7 } from "@zetta/core/uuid";
+import { isInviteRole, type InviteRole } from "@zetta/core/workspace";
 import type { Database } from "@zetta/db";
 import { user } from "@zetta/db/schema/auth";
 import {
@@ -26,6 +27,31 @@ export class EnrollmentUnavailableError extends Error {
 
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type AuditEvent = "invite-issued" | "invite-revoked" | "invite-consumed";
+export type EnrollmentTransaction = Transaction;
+
+/**
+ * What the workspace layer adds to enrollment (modules/workspaces/identity-hooks.ts). Each one runs inside the enrollment transaction,
+ * after the identity locks and the invitation write, so the workspace rows commit or roll back with the membership. A hook that throws
+ * makes the whole operation unavailable. With no hooks the service is the installation-wide one: only the installation admin invites.
+ */
+export type EnrollmentHooks = Readonly<{
+  /** Whether a person who is not the installation admin may send and revoke invitations. */
+  administers?: (tx: Transaction, userId: string) => Promise<boolean>;
+  issued?: (
+    tx: Transaction,
+    grant: Readonly<{
+      invitationId: string;
+      issuerUserId: string;
+      issuerIsRoot: boolean;
+      role: InviteRole;
+      chiefBotId: string | null;
+    }>,
+  ) => Promise<void>;
+  accepted?: (
+    tx: Transaction,
+    joined: Readonly<{ invitationId: string; userId: string }>,
+  ) => Promise<void>;
+}>;
 
 function unavailable(): never {
   throw new EnrollmentUnavailableError();
@@ -57,6 +83,8 @@ function actorId(actor: EnrollmentActor): string {
   return value.userId;
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 function tokenHash(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -83,7 +111,11 @@ async function audit(
 async function lockIdentity(
   tx: Transaction,
   userId: string,
-  scope: Readonly<{ adminOnly: boolean; intendedUserId?: string | null }>,
+  scope: Readonly<{
+    adminOnly: boolean;
+    intendedUserId?: string | null;
+    administers?: EnrollmentHooks["administers"];
+  }>,
 ) {
   const [installation] = await tx
     .select({ adminUserId: installationIdentity.adminUserId })
@@ -126,14 +158,16 @@ async function lockIdentity(
     }
   }
   const account = accounts.get(userId);
-  if (
-    !account ||
-    statuses.get(installation.adminUserId) !== "active" ||
-    (scope.adminOnly && installation.adminUserId !== userId)
-  )
-    return unavailable();
+  if (!account || statuses.get(installation.adminUserId) !== "active") return unavailable();
+  const isRoot = installation.adminUserId === userId;
+  // Who else may do an admin-only operation is the workspace layer's answer, asked now that every identity lock is held.
+  if (scope.adminOnly && !isRoot) {
+    if (statuses.get(userId) !== "active" || !scope.administers) return unavailable();
+    if (!(await scope.administers(tx, userId))) return unavailable();
+  }
   return {
     ...account,
+    isRoot,
     membershipStatus: statuses.get(userId),
     activationRevision: revisions.get(userId),
   };
@@ -143,7 +177,10 @@ async function lockIdentity(
  * transaction method. No services/env/connection are imported or initialized.
  * All failures are intentionally opaque, including driver errors with SQL params.
  */
-export function createEnrollmentService(db: Pick<Database, "transaction">) {
+export function createEnrollmentService(
+  db: Pick<Database, "transaction">,
+  hooks: EnrollmentHooks = {},
+) {
   async function safely<T>(work: () => Promise<T>): Promise<T> {
     try {
       return await work();
@@ -156,7 +193,7 @@ export function createEnrollmentService(db: Pick<Database, "transaction">) {
     issueInvitation(actor: EnrollmentActor, input: unknown) {
       return safely(async () => {
         const userId = actorId(actor);
-        const fields = body(input, ["intendedEmail"], ["intendedUserId"]);
+        const fields = body(input, ["intendedEmail"], ["intendedUserId", "role", "chiefBotId"]);
         if (
           typeof fields.intendedEmail !== "string" ||
           !/^[^\s@]+@[^\s@]+$/.test(fields.intendedEmail)
@@ -167,9 +204,23 @@ export function createEnrollmentService(db: Pick<Database, "transaction">) {
         const intendedEmail = fields.intendedEmail.toLowerCase();
         const intendedUserId =
           typeof fields.intendedUserId === "string" ? fields.intendedUserId : null;
+        if (fields.role !== undefined && !isInviteRole(fields.role)) return unavailable();
+        if (
+          fields.chiefBotId !== undefined &&
+          (typeof fields.chiefBotId !== "string" || !UUID.test(fields.chiefBotId))
+        )
+          return unavailable();
+        const role: InviteRole = isInviteRole(fields.role) ? fields.role : "member";
+        const chiefBotId = typeof fields.chiefBotId === "string" ? fields.chiefBotId : null;
+        // A role or a Chief is a workspace matter: without that layer there is nobody to honour it.
+        if ((role !== "member" || chiefBotId) && !hooks.issued) return unavailable();
         return db.transaction(
           async (tx) => {
-            await lockIdentity(tx, userId, { adminOnly: true, intendedUserId });
+            const issuer = await lockIdentity(tx, userId, {
+              adminOnly: true,
+              intendedUserId,
+              administers: hooks.administers,
+            });
             const token = randomBytes(32).toString("base64url");
             const [issued] = await tx
               .insert(invitation)
@@ -185,6 +236,13 @@ export function createEnrollmentService(db: Pick<Database, "transaction">) {
               .returning({ invitationId: invitation.id, expiresAt: invitation.expiresAt });
             if (!issued) return unavailable();
             await audit(tx, "invite-issued", userId, issued.invitationId, intendedUserId);
+            await hooks.issued?.(tx, {
+              invitationId: issued.invitationId,
+              issuerUserId: userId,
+              issuerIsRoot: issuer.isRoot,
+              role,
+              chiefBotId,
+            });
             // This is the sole raw-token response. No other operation returns token data.
             return { ...issued, token };
           },
@@ -228,7 +286,7 @@ export function createEnrollmentService(db: Pick<Database, "transaction">) {
         const invitationId = fields.invitationId;
         return db.transaction(
           async (tx) => {
-            await lockIdentity(tx, userId, { adminOnly: true });
+            await lockIdentity(tx, userId, { adminOnly: true, administers: hooks.administers });
             const [revoked] = await tx
               .update(invitation)
               .set({ revokedAt: sql`clock_timestamp()` })
@@ -322,6 +380,10 @@ export function createEnrollmentService(db: Pick<Database, "transaction">) {
               claimed.invitationId,
               account.userId,
             );
+            await hooks.accepted?.(tx, {
+              invitationId: claimed.invitationId,
+              userId: account.userId,
+            });
             return activated;
           },
           { isolationLevel: "read committed" },

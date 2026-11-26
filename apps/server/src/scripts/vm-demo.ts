@@ -52,6 +52,7 @@ const store: VmStore = {
     if (!rows[0]) {
       rows.push({
         id: uuidv7(),
+        workspaceId: "00000000-0000-7000-8000-00000000000a",
         ownerUserId: u,
         name: "Default",
         kind: "default",
@@ -73,6 +74,7 @@ const store: VmStore = {
   create: async (u, v) => {
     const row: VmRow = {
       id: uuidv7(),
+      workspaceId: "00000000-0000-7000-8000-00000000000a",
       ownerUserId: u,
       name: v.name,
       kind: "extra",

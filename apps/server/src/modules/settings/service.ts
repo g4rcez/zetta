@@ -4,6 +4,7 @@
 // Freshness: each process keeps the rows of a scope in memory for `ttlMs` (5 seconds). A write made through this process drops its cache at
 // once; another process sees the change within `ttlMs`. Nothing is pushed between processes.
 import type { Database } from "@zetta/db";
+import { tenant } from "@zetta/db";
 import {
   SETTINGS,
   SETTING_GROUPS,
@@ -16,7 +17,7 @@ import {
   type SettingKey,
   type SettingValue,
 } from "@zetta/core/settings";
-import { AccessError, type ActiveActor } from "../identity/access";
+import { AccessError, type ActiveActor, isRoot } from "../identity/access";
 import { createSettingsStore, type SettingScope, type SettingsStore } from "./store";
 
 /** Who asks for a write: a person at the keyboard, or a bot or MCP client acting for one. A sensitive setting refuses the second. */
@@ -25,7 +26,7 @@ export type SettingSourceView = "organization" | "installation" | "imported" | "
 
 export class SettingsError extends Error {
   constructor(
-    readonly code: "UNKNOWN_KEY" | "INVALID" | "SENSITIVE" | "SCOPE",
+    readonly code: "UNKNOWN_KEY" | "INVALID" | "SENSITIVE" | "SCOPE" | "ROOT_ONLY",
     message: string,
   ) {
     super(message);
@@ -122,6 +123,27 @@ export function createSettingsService({
   const requireAdmin = (actor: ActiveActor) => {
     if (!actor.isAdmin) throw new AccessError("ACCESS_DENIED");
   };
+  /**
+   * Who may change a key. A setting of scope `installation` is one value for the whole server: root's. A setting a workspace may have
+   * is its administrators' too, for their own workspace only (`scopeOf`); root's change of it is the server's value, which every
+   * workspace without one of its own takes.
+   */
+  const requireMayChange = (actor: ActiveActor, key: SettingKey, organizationId?: string) => {
+    requireAdmin(actor);
+    if (isRoot(actor)) return;
+    // Security policy is root's too: a workspace may only be stricter than the server, and it has no value of its own yet.
+    if (SETTINGS[key].scope === "installation" || SETTINGS[key].sensitive)
+      throw new SettingsError(
+        "ROOT_ONLY",
+        `"${SETTINGS[key].label}" is decided for the whole server. Only the person who set the server up changes it.`,
+      );
+    // Their own workspace's value, never another's.
+    if (organizationId !== undefined && organizationId !== actor.workspaceId)
+      throw new AccessError("ACCESS_DENIED");
+  };
+  /** The workspace a change or a view is for: the one asked for; for an administrator who is not root, their own. */
+  const scopeOf = (actor: ActiveActor, organizationId?: string) =>
+    organizationId ?? (isRoot(actor) ? undefined : actor.workspaceId);
   const definition = (key: string): SettingKey => {
     if (!isSettingKey(key)) throw new SettingsError("UNKNOWN_KEY", "There is no such setting.");
     return key;
@@ -138,8 +160,10 @@ export function createSettingsService({
     return { kind: "workspace", id: organizationId } as const satisfies SettingScope;
   };
 
-  async function resolve<K extends SettingKey>(key: K, organizationId?: string) {
+  /** The value a reader gets: the workspace's own when it has one (the workspace the work runs for, when none is named), else the server's. */
+  async function resolve<K extends SettingKey>(key: K, named?: string) {
     const def = SETTINGS[key];
+    const organizationId = named ?? tenant.current();
     const installation = (await layer({ kind: "installation" })).get(key);
     const organization =
       organizationId && def.scope === "organization"
@@ -248,9 +272,12 @@ export function createSettingsService({
       requireAdmin(actor);
       if (opts.organizationId !== undefined && !UUID.test(opts.organizationId))
         throw new SettingsError("INVALID", "That is not an organization.");
+      const scope = scopeOf(actor, opts.organizationId);
+      if (scope !== undefined && !isRoot(actor) && scope !== actor.workspaceId)
+        throw new AccessError("ACCESS_DENIED");
       const settings: SettingView[] = [];
       for (const key of Object.keys(SETTINGS) as SettingKey[])
-        settings.push(view(key, await resolve(key, opts.organizationId)));
+        settings.push(view(key, await resolve(key, scope)));
       return { groups: SETTING_GROUPS, settings };
     },
 
@@ -267,12 +294,14 @@ export function createSettingsService({
     ): Promise<SettingView> {
       requireAdmin(actor);
       const key = definition(rawKey);
+      requireMayChange(actor, key, opts.organizationId);
       if (SETTINGS[key].sensitive && opts.via === "bot")
         throw new SettingsError(
           "SENSITIVE",
           `"${SETTINGS[key].label}" is security policy: only a person can change it, not a bot or an MCP client.`,
         );
-      const org = organizationScope(key, opts.organizationId);
+      const organizationId = scopeOf(actor, opts.organizationId);
+      const org = organizationScope(key, organizationId);
       const parsed = parseSettingValue(key, value);
       if (!parsed.ok) throw new SettingsError("INVALID", parsed.error);
       if (org && "combine" in SETTINGS[key] && SETTINGS[key].combine === "narrow") {
@@ -292,7 +321,7 @@ export function createSettingsService({
       await store.upsert(org ?? { kind: "installation" }, key, parsed.value, actor.userId);
       invalidate();
       record(actor, key, "set", org);
-      return view(key, await resolve(key, opts.organizationId));
+      return view(key, await resolve(key, organizationId));
     },
 
     /** Removes the stored value, so the installation value (for an organization) or the default (for the installation) counts again. */
@@ -303,16 +332,18 @@ export function createSettingsService({
     ): Promise<SettingView> {
       requireAdmin(actor);
       const key = definition(rawKey);
+      requireMayChange(actor, key, opts.organizationId);
       if (SETTINGS[key].sensitive && opts.via === "bot")
         throw new SettingsError(
           "SENSITIVE",
           `"${SETTINGS[key].label}" is security policy: only a person can change it, not a bot or an MCP client.`,
         );
-      const org = organizationScope(key, opts.organizationId);
+      const organizationId = scopeOf(actor, opts.organizationId);
+      const org = organizationScope(key, organizationId);
       const removed = await store.remove(org ?? { kind: "installation" }, key);
       invalidate();
       if (removed) record(actor, key, "reset", org);
-      return view(key, await resolve(key, opts.organizationId));
+      return view(key, await resolve(key, organizationId));
     },
 
     /** Forgets what this process remembers. A write through this service already does it; the import at start-up and tests use it. */

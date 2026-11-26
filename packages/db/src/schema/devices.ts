@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot } from "./chat";
@@ -19,6 +20,7 @@ const owner = () =>
 export const device = zetta.table(
   "device",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -37,7 +39,7 @@ export const device = zetta.table(
     check("device_credential_check", sql`length(${t.credentialHash}) = 64`),
     uniqueIndex("device_credential_hash_unique").on(t.credentialHash),
     uniqueIndex("device_owner_name_unique")
-      .on(t.ownerUserId, t.name)
+      .on(t.workspaceId, t.ownerUserId, t.name)
       .where(sql`${t.revokedAt} is null`),
     index("device_owner_idx").on(t.ownerUserId),
   ],
@@ -47,6 +49,7 @@ export const device = zetta.table(
 export const deviceBot = zetta.table(
   "device_bot",
   {
+    workspaceId: inWorkspace(),
     deviceId: uuid("device_id")
       .notNull()
       .references(() => device.id, { onDelete: "cascade", onUpdate: "restrict" }),

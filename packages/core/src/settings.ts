@@ -446,6 +446,20 @@ export const SETTINGS = {
     // This setting never was a variable, so nothing is imported for it.
     fromEnv: () => undefined,
   },
+  serverLogin: {
+    group: "security",
+    label: "People without an agent account run on the server's own sign-in",
+    help: "Each person can connect their own subscription or key to an engine (Studio > Accounts). Allowed: a person who has none for an engine runs on the sign-in of the server's own user, which everyone then shares, as it was before accounts. Off: a bot answers only on an account, the person's own or one its owner shares, and asks the person to connect one otherwise.",
+    type: "choice",
+    default: "allowed",
+    options: ["allowed", "off"],
+    scope: "installation",
+    sensitive: true,
+    applies: "now",
+    env: "ZETTA_SERVER_LOGIN",
+    // This setting never was a variable, so nothing is imported for it.
+    fromEnv: () => undefined,
+  },
 } as const satisfies Record<string, SettingDef>;
 
 /**

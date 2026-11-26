@@ -2,6 +2,8 @@
 
 `packages/infra` sets up Zetta on an Arch Linux server and keeps it updated over SSH. Zetta runs natively under systemd, with its own Postgres and Caddy for HTTPS. It is sized for a small machine (1 vCPU, 4 GB of RAM).
 
+This is the kind of infra named `vps`: everything on one host. Its code is in `packages/infra/src/vps`. Other kinds get a folder of their own beside it, and share `packages/infra/src/core` (SSH, the remote scripts, the release build).
+
 ```
 Internet ─► Caddy :80/:443 ─► 127.0.0.1:3000  zetta.service (Bun)
                                                 ├─ the web app and /api
@@ -15,7 +17,10 @@ For an install with containers on one computer, use the [installer](../../README
 - A server with Arch Linux (x86_64 or aarch64), root access over SSH (password or key), 4 GB of RAM and 15 GB of free disk.
 - A domain whose A record (and AAAA, if the server has IPv6) points at the server.
 - Ports 80 and 443 open in your provider's firewall, if it has one.
-- On your computer: this repository, [Bun](https://bun.sh), `git`, `ssh`, `rsync`, `tar` and an SSH key pair (`ssh-keygen -t ed25519`).
+- No user named `zetta` on the server. Zetta creates that name as its service account, with the home `/var/lib/zetta` and no login. `bootstrap` stops before it changes anything when the name belongs to another account.
+- On your computer: `git`, `ssh`, `rsync`, `tar`, an SSH key pair (`ssh-keygen -t ed25519`), and one of:
+  - this repository and [Bun](https://bun.sh), for the `bun run infra` commands below;
+  - the `zetta` program alone, [without the repository](#without-the-repository-the-zetta-program).
 
 ## First time
 
@@ -58,6 +63,10 @@ For an install with containers on one computer, use the [installer](../../README
    ```
 
    The setting matters on a public server. Left on **Only this computer**, Zetta trusts the machine it runs on, which is wrong behind a public address.
+
+## Whose account bots run on
+
+`bun run infra login` signs the server's own user in to an agent CLI. Everyone's bots run on that one sign-in until a person connects their own account in **Studio > Accounts**; from then on their bots run on theirs. To make every person bring their own, turn off **People without an agent account run on the server's own sign-in** in Studio > Server settings. The guide is [agent-accounts.md](agent-accounts.md).
 
 ## Settings for 4 GB
 
@@ -102,13 +111,14 @@ Once Zetta is open to the network, code access is off (see [runtime modes](runti
 | Command                                | Does                                                       |
 | -------------------------------------- | ---------------------------------------------------------- |
 | `bun run infra deploy`                 | Release the current commit (`--ref <git ref>` for another) |
+| `bun run infra deploy --repo <source>` | Release from another clone (a folder) or a repository URL  |
 | `bun run infra status`                 | Services, health, memory, disk, releases, backups          |
 | `bun run infra logs -f` (`--all`)      | Follow the log (with Caddy and Postgres)                   |
 | `bun run infra rollback` (`--to <id>`) | Run an earlier release                                     |
 | `bun run infra restart`                | Restart and wait until it answers                          |
 | `bun run infra migrate`                | Apply waiting migrations of the running release            |
 | `bun run infra backup` / `backup pull` | Back up now / download the newest backup                   |
-| `bun run infra login <agent>`          | Sign an agent CLI in again                                 |
+| `bun run infra login <agent>`          | Sign the server's own agent CLI in again                   |
 | `bun run infra ssh`                    | A shell on the server                                      |
 
 `--dry-run` prints what any command would send, without connecting.
@@ -171,12 +181,39 @@ sudo pacman -Syu --ignore postgresql,postgresql-libs,pgvector
 3. `bun run infra bootstrap` creates a new database cluster and puts the hook back. Then restore the backup of step 1 with `sudo zetta-restore <folder>`.
 4. When Zetta works, remove `/var/lib/postgres/data-old`.
 
+## Without the repository: the `zetta` program
+
+`zetta` is one file that holds these commands, with no clone of the repository and no Bun on your computer. Build it once from a clone, then copy it to any computer of the same system:
+
+```
+bun run compile:cli                       # writes apps/cli/dist/zetta-<system>
+bun run compile:cli --target bun-linux-x64
+```
+
+Every command of this guide is the same with `zetta infra` in place of `bun run infra`:
+
+```
+zetta infra bootstrap
+zetta infra deploy
+zetta infra status
+```
+
+What differs outside a clone:
+
+- **The values** are in `~/.config/zetta/infra/.env.production` (or under `$XDG_CONFIG_HOME`), with the same names as above. Create the file with mode 600.
+- **The code** of a deploy is fetched from `https://github.com/g4rcez/zetta.git`, at the commit the program was built from (`zetta version` shows it). `--ref main` takes the newest code, and `--repo <URL>` another repository. The build still happens on your computer, with the program itself in the place of Bun.
+- **The versions** a server gets (Bun, the agent CLIs) are the ones pinned when the program was built.
+- **The environments** are the ones in `packages/infra/environments` when the program was built.
+
+Run inside a clone, `zetta` reads the clone, exactly as `bun run infra` does.
+
 ## Another environment
 
-Add `packages/infra/environments/<name>.ts` (copy `production.ts`) and `packages/infra/.env.<name>`, then pass `--env <name>` to any command. Each environment is its own server.
+Add `packages/infra/environments/<name>.ts` (copy `production.ts`), list it in `packages/infra/environments/index.ts`, and write `packages/infra/.env.<name>`. Then pass `--env <name>` to any command. Each environment is its own server.
 
 ## When something is wrong
 
 - **No certificate, or the site does not answer:** check that the domain points at the server and that ports 80 and 443 are open, then `bun run infra logs --all`.
+- **`bootstrap` stops at "a user named zetta already exists":** a login account has the name of the service account. Move its work to another user, then remove or rename it (`sudo userdel zetta`, or `sudo usermod -l <new name> zetta`), and run `bootstrap` again.
 - **SSH refuses you after several tries:** `sshguard` blocks an address for a while after repeated failures. Wait, or use the provider's web console.
 - **A deploy failed:** the output ends with the server's log. The earlier release is still running; `bun run infra status` shows it.

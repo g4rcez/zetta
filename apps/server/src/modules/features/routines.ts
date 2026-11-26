@@ -1,4 +1,5 @@
 import type { Database } from "@zetta/db";
+import { tenant } from "@zetta/db";
 import schedule from "node-schedule";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, ne, sql } from "@zetta/db/query";
 import { bot, conversation, message } from "@zetta/db/schema/chat";
@@ -215,7 +216,9 @@ export function createRoutines(
    * rebuilt from it at boot, so a restart only loses timers, never schedules. Kept on globalThis so a `bun --hot` reload cancels the
    * previous module's jobs instead of stacking a second set.
    */
-  const g = globalThis as { zettaRoutineJobs?: Map<string, schedule.Job> };
+  const g = globalThis as {
+    zettaRoutineJobs?: Map<string, schedule.Job & { workspaceId?: string }>;
+  };
   const jobs = (g.zettaRoutineJobs ??= new Map());
   const disarm = (id: string) => {
     jobs.get(id)?.cancel();
@@ -229,8 +232,13 @@ export function createRoutines(
     if (r.paused || r.archived || !r.nextRunAt) return;
     // node-schedule ignores dates in the past, so an overdue occurrence fires right away.
     const at = r.nextRunAt.getTime() > Date.now() ? r.nextRunAt : new Date(Date.now() + 500);
-    const job = schedule.scheduleJob(`routine:${r.id}`, at, () => void fire(r.id).catch(() => {}));
-    if (job) jobs.set(r.id, job);
+    // node-schedule fires every job from one shared timer, so a job does not keep the workspace it was armed in: it names it.
+    const job = schedule.scheduleJob(
+      `routine:${r.id}`,
+      at,
+      () => void tenant.run(r.workspaceId, () => fire(r.id)).catch(() => {}),
+    );
+    if (job) jobs.set(r.id, Object.assign(job, { workspaceId: r.workspaceId }));
   }
 
   /** The output of the routine's last run that did work, for a standing goal. */
@@ -843,25 +851,37 @@ export function createRoutines(
     recoverRecent,
     retryDue,
     runDue,
-    /** Arms a job for every active routine and cancels the rest; also a 5-minute sweep for anything overdue. Call once at boot. */
+    /**
+     * Arms a job for every active routine of the workspace it runs for and cancels that workspace's other jobs; also its 5-minute sweep
+     * for anything overdue. Called once at boot for each workspace: the jobs of the others are left alone.
+     */
     async start() {
+      const workspaceId = tenant.current();
       const active = await db
         .select()
         .from(routine)
         .where(and(eq(routine.paused, false), eq(routine.archived, false)));
       const keep = new Set(active.map((r) => r.id));
-      const keys = Array.from(jobs.keys());
-      for (const id of keys) if (!keep.has(id)) disarm(id);
+      for (const [id, job] of Array.from(jobs.entries()))
+        if (!keep.has(id) && (!workspaceId || job.workspaceId === workspaceId)) disarm(id);
       for (const r of active) arm(r);
-      const sweep = globalThis as { zettaRoutineSweep?: schedule.Job | null };
-      sweep.zettaRoutineSweep?.cancel();
-      sweep.zettaRoutineSweep = schedule.scheduleJob("routine-sweep", "*/5 * * * *", () => {
+      // The one sweep for every workspace of a process from before workspaces had their own.
+      (globalThis as { zettaRoutineSweep?: schedule.Job | null }).zettaRoutineSweep?.cancel();
+      const sweeps = globalThis as { zettaRoutineSweeps?: Map<string, schedule.Job> };
+      const all = (sweeps.zettaRoutineSweeps ??= new Map());
+      const key = workspaceId ?? "";
+      all.get(key)?.cancel();
+      const swept = () => {
         void runDue().catch(() => {});
         void retryDue().catch(() => {});
         void settleFollowing().catch(() => {});
         void reviveBlocked().catch(() => {});
         if (new Date().getMinutes() < 5) void trimOldOutput().catch(() => {}); // once an hour
-      });
+      };
+      const job = schedule.scheduleJob(`routine-sweep:${key}`, "*/5 * * * *", () =>
+        workspaceId ? tenant.run(workspaceId, swept) : swept(),
+      );
+      if (job) all.set(key, job);
       return active.length;
     },
     useChat(turn: ChatTurn) {

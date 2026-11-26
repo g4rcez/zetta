@@ -1,0 +1,1 @@
+ALTER TABLE "zetta"."invitation_grant" DROP CONSTRAINT "invitation_grant_role_check", ADD CONSTRAINT "invitation_grant_role_check" CHECK ("role" in ('owner', 'admin', 'member'));

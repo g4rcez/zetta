@@ -1,14 +1,16 @@
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   check,
   index,
   integer,
   text,
   timestamp,
+  type AnyPgColumn,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
@@ -46,6 +48,7 @@ export type TaskFollowUp = (typeof TASK_FOLLOW_UPS)[number];
 export const task = zetta.table(
   "task",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -88,6 +91,7 @@ export const task = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("task_id_workspace_unique").on(t.id, t.workspaceId),
     check("task_assignee_check", sql`${t.assignee} = 'bot' or ${t.assigneeUserId} is not null`),
     index("task_assignee_user_idx").on(t.assigneeUserId, t.status),
     index("task_bot_id_idx").on(t.botId),

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { index, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { memoryItem } from "./memory";
@@ -18,6 +19,7 @@ export { EMBEDDING_DIMENSIONS } from "./search";
 export const knowledgeSource = zetta.table(
   "knowledge_source",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -40,7 +42,7 @@ export const knowledgeSource = zetta.table(
   },
   (t) => [
     unique("knowledge_source_owner_provider")
-      .on(t.ownerUserId, t.provider, t.account)
+      .on(t.workspaceId, t.ownerUserId, t.provider, t.account)
       .nullsNotDistinct(),
     index("knowledge_source_due_idx").on(t.nextSyncAt),
   ],
@@ -49,6 +51,7 @@ export const knowledgeSource = zetta.table(
 export const knowledgeDoc = zetta.table(
   "knowledge_doc",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

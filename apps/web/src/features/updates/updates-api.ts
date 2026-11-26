@@ -10,6 +10,7 @@ import {
 import { STATIC } from "@/lib/query-policy";
 import { call } from "../chat/chat-client";
 import { identityQueries } from "../identity/identity-queries";
+import { isRootIdentity } from "@/lib/identity-client";
 
 /** What `GET /api/installation/version` answers: the build of this server and what the daily update check knows. */
 export type VersionStatus = {
@@ -45,10 +46,10 @@ export function versionText(build: BuildInfo | null): string {
   return `Version ${build.commit.slice(0, 7)} · ${dayOf(build.date) ?? build.date}`;
 }
 
-/** True for the signed-in administrator. Members, and the time before the answer, are false. */
+/** True for the person who runs this server (root): updating it is theirs. Everyone else, and the time before the answer, are false. */
 export function useIsAdmin(): boolean {
   const { data } = useQuery(identityQueries.status());
-  return data?.state === "active" && data.isAdmin;
+  return isRootIdentity(data);
 }
 
 /**

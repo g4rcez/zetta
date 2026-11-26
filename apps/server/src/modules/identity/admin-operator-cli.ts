@@ -11,15 +11,26 @@ if (import.meta.main) {
       const timer = setTimeout(expired, 20_000);
       return () => clearTimeout(timer);
     },
-    terminate: () => { process.exit(1); },
+    terminate: () => {
+      process.exit(1);
+    },
     open: async (target) => {
       // Target AND complete input validation happen before these runtime imports.
       const { openAdminOperatorClient } = await import("@zetta/db/admin-operator-client");
       const { createAdminLifecycleService } = await import("./admin-lifecycle");
+      const { adminLifecycleHooks } = await import("../workspaces/identity-hooks");
       const client = await openAdminOperatorClient(target);
-      return { service: createAdminLifecycleService(client.db), close: client.close, healthy: client.healthy };
+      return {
+        service: createAdminLifecycleService(client.db, adminLifecycleHooks),
+        close: client.close,
+        healthy: client.healthy,
+      };
     },
-    stdout: (text) => { writeSync(1, text); },
-    stderr: (text) => { writeSync(2, text); },
+    stdout: (text) => {
+      writeSync(1, text);
+    },
+    stderr: (text) => {
+      writeSync(2, text);
+    },
   });
 }

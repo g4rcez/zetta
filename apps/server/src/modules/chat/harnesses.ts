@@ -71,7 +71,7 @@ export async function harnessReadiness(
         (status === "not_installed"
           ? "Ask the administrator to install it on the server."
           : status === "needs_login"
-            ? "Sign in to this tool on the server (as the account Zetta runs under), then send a test message."
+            ? "Your last run was not signed in. Connect your own account for this engine here, then send a test message."
             : status === "installed"
               ? "Installed. Choose it for a bot to start using it."
               : "Working."),

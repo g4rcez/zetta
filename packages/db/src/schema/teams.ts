@@ -1,16 +1,19 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
   primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot } from "./chat";
@@ -67,6 +70,7 @@ export type TeamPoint = { x: number; y: number };
 export const team = zetta.table(
   "team",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -84,8 +88,9 @@ export const team = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("team_id_workspace_unique").on(t.id, t.workspaceId),
     uniqueIndex("team_owner_name_unique")
-      .on(t.ownerUserId, sql`lower(${t.name})`)
+      .on(t.workspaceId, t.ownerUserId, sql`lower(${t.name})`)
       .where(sql`${t.status} = 'active'`),
     check("team_name_check", sql`length(btrim(${t.name})) between 1 and 80`),
     check("team_goal_check", sql`length(${t.goal}) <= 1000`),
@@ -101,6 +106,7 @@ export const team = zetta.table(
 export const teamPerson = zetta.table(
   "team_person",
   {
+    workspaceId: inWorkspace(),
     teamId: uuid("team_id")
       .notNull()
       .references(() => team.id, restrict),
@@ -112,6 +118,13 @@ export const teamPerson = zetta.table(
     joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "team_person_team_id_workspace_fkey",
+      columns: [t.teamId, t.workspaceId],
+      foreignColumns: [team.id, team.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.teamId, t.userId] }),
     index("team_person_user_id_idx").on(t.userId),
     uniqueIndex("team_person_one_owner")
@@ -124,6 +137,7 @@ export const teamPerson = zetta.table(
 export const teamRole = zetta.table(
   "team_role",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -136,7 +150,11 @@ export const teamRole = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("team_role_owner_name_unique").on(t.ownerUserId, sql`lower(${t.name})`),
+    uniqueIndex("team_role_owner_name_unique").on(
+      t.workspaceId,
+      t.ownerUserId,
+      sql`lower(${t.name})`,
+    ),
     check("team_role_name_check", sql`length(btrim(${t.name})) between 1 and 60`),
     check("team_role_description_check", sql`length(${t.description}) <= 200`),
   ],
@@ -146,6 +164,7 @@ export const teamRole = zetta.table(
 export const teamMember = zetta.table(
   "team_member",
   {
+    workspaceId: inWorkspace(),
     teamId: uuid("team_id")
       .notNull()
       .references(() => team.id, restrict),
@@ -162,6 +181,13 @@ export const teamMember = zetta.table(
     joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "team_member_team_id_workspace_fkey",
+      columns: [t.teamId, t.workspaceId],
+      foreignColumns: [team.id, team.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.teamId, t.botId] }),
     index("team_member_bot_id_idx").on(t.botId),
     uniqueIndex("team_member_one_chief")

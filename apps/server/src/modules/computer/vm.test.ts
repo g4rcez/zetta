@@ -38,6 +38,7 @@ function memoryStore(): VmStore & { rows: VmRow[] } {
   const rows: VmRow[] = [];
   const row = (userId: string, v: Partial<VmRow>): VmRow => ({
     id: uuidv7(),
+    workspaceId: "00000000-0000-7000-8000-00000000000a",
     ownerUserId: userId,
     name: "Default",
     kind: "default",

@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -9,6 +10,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -37,6 +39,7 @@ import {
   REPLY_SIGNALS,
 } from "@zetta/core/learning";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
@@ -55,6 +58,7 @@ const setNull = { onDelete: "set null", onUpdate: "restrict" } as const;
 export const itemUse = zetta.table(
   "item_use",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -93,6 +97,7 @@ export const itemUse = zetta.table(
 export const replyOutcome = zetta.table(
   "reply_outcome",
   {
+    workspaceId: inWorkspace(),
     messageId: uuid("message_id")
       .notNull()
       .references(() => message.id, cascade),
@@ -139,6 +144,7 @@ export type ReplyOutcomeRow = typeof replyOutcome.$inferSelect;
 export const botLesson = zetta.table(
   "bot_lesson",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -167,6 +173,7 @@ export const botLesson = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("bot_lesson_id_workspace_unique").on(t.id, t.workspaceId),
     index("bot_lesson_bot_idx").on(t.botId, t.status),
     index("bot_lesson_owner_idx").on(t.ownerUserId, t.status),
     uniqueIndex("bot_lesson_item_unique")
@@ -181,6 +188,7 @@ export const botLesson = zetta.table(
 export const botLessonEvidence = zetta.table(
   "bot_lesson_evidence",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -195,6 +203,13 @@ export const botLessonEvidence = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "bot_lesson_evidence_lesson_id_workspace_fkey",
+      columns: [t.lessonId, t.workspaceId],
+      foreignColumns: [botLesson.id, botLesson.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     index("bot_lesson_evidence_lesson_idx").on(t.lessonId),
     uniqueIndex("bot_lesson_evidence_message_unique")
       .on(t.lessonId, t.messageId)
@@ -207,6 +222,7 @@ export const botLessonEvidence = zetta.table(
 export const botLessonEvent = zetta.table(
   "bot_lesson_event",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -219,6 +235,13 @@ export const botLessonEvent = zetta.table(
     at: timestamp("at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "bot_lesson_event_lesson_id_workspace_fkey",
+      columns: [t.lessonId, t.workspaceId],
+      foreignColumns: [botLesson.id, botLesson.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     index("bot_lesson_event_lesson_idx").on(t.lessonId, t.at),
     check("bot_lesson_event_detail_check", sql`char_length(${t.detail}) <= 1000`),
   ],
@@ -232,6 +255,7 @@ export const botLessonEvent = zetta.table(
 export const learningRun = zetta.table(
   "learning_run",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -264,16 +288,22 @@ export const learningRun = zetta.table(
 );
 
 /** What a person lets the learning jobs do, and how strict the trial is. One row per person; no row means the defaults. */
-export const learningPolicy = zetta.table("learning_policy", {
-  ownerUserId: text("owner_user_id")
-    .primaryKey()
-    .references(() => user.id, restrict),
-  batch: text("batch", { enum: LEARNING_BATCH_MODES }).default("daily").notNull(),
-  forget: text("forget", { enum: LEARNING_FORGET_MODES }).default("on").notNull(),
-  tidy: text("tidy", { enum: LEARNING_TIDY_MODES }).default("weekly").notNull(),
-  strictness: text("strictness", { enum: LEARNING_STRICTNESS }).default("normal").notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const learningPolicy = zetta.table(
+  "learning_policy",
+  {
+    workspaceId: inWorkspace(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => user.id, restrict),
+    batch: text("batch", { enum: LEARNING_BATCH_MODES }).default("daily").notNull(),
+    forget: text("forget", { enum: LEARNING_FORGET_MODES }).default("on").notNull(),
+    tidy: text("tidy", { enum: LEARNING_TIDY_MODES }).default("weekly").notNull(),
+    strictness: text("strictness", { enum: LEARNING_STRICTNESS }).default("normal").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  // One policy per person in each workspace.
+  (t) => [primaryKey({ name: "learning_policy_pkey", columns: [t.workspaceId, t.ownerUserId] })],
+);
 
 export type BotLessonRow = typeof botLesson.$inferSelect;
 export type LearningRunRow = typeof learningRun.$inferSelect;
@@ -287,6 +317,7 @@ export type LearningPolicyRow = typeof learningPolicy.$inferSelect;
 export const learningFinding = zetta.table(
   "learning_finding",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -304,7 +335,7 @@ export const learningFinding = zetta.table(
     decidedAt: timestamp("decided_at", { withTimezone: true }),
   },
   (t) => [
-    uniqueIndex("learning_finding_unique").on(t.ownerUserId, t.kind, t.refHash),
+    uniqueIndex("learning_finding_unique").on(t.workspaceId, t.ownerUserId, t.kind, t.refHash),
     index("learning_finding_owner_idx").on(t.ownerUserId, t.status),
     check("learning_finding_summary_check", sql`char_length(${t.summary}) between 1 and 1000`),
   ],

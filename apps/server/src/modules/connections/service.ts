@@ -8,6 +8,7 @@ import { AccessError, type ActiveActor } from "../identity/access";
 import { audit } from "../features/audit";
 import type { createConnectionStore } from "./store";
 import { ConnectionStoreError } from "./store-contract";
+import { sharedChiefOf } from "../workspaces/chief";
 
 type Store = Awaited<ReturnType<typeof createConnectionStore>>;
 export class ConnectionRequiredError extends Error {
@@ -55,6 +56,8 @@ export const PROVIDERS = [
   "phone",
   "phonetwilio",
   "waha",
+  // The sealed token or key of an agent account (modules/engine-accounts): created, shown and removed there only.
+  "engine",
   COMPATIBLE_PROVIDER,
 ];
 
@@ -68,8 +71,13 @@ export function createConnectionsService(db: Database, store?: Store) {
       .select()
       .from(bot)
       .where(and(eq(bot.id, botId), eq(bot.archived, false)));
-    if (!b || (b.ownerUserId !== a.userId && b.visibility !== "team"))
-      throw new AccessError("NOT_FOUND");
+    // Also the bot someone shared with this person as their Chief, which may be private to its owner.
+    const mine =
+      b &&
+      (b.ownerUserId === a.userId ||
+        b.visibility === "team" ||
+        (await sharedChiefOf(db, a.userId))?.id === b.id);
+    if (!b || !mine) throw new AccessError("NOT_FOUND");
     return b;
   };
   return {

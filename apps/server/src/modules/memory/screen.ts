@@ -1,10 +1,9 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq } from "@zetta/db/query";
-import { bot } from "@zetta/db/schema/chat";
 import { z } from "zod";
 import { firstObject } from "../chat/bot-interview";
 import { runCli, type NativeHarness, type RunCli } from "../chat/harness";
 import { unsafeMemory } from "../features/knowledge";
+import { chiefFor } from "../workspaces/chief";
 
 /**
  * The screen of a source before a bot reads it (memory ingest). A source is text from outside: a web page, a pasted note, a file. It may
@@ -145,12 +144,7 @@ export function createMemoryScreen(db: Database, deps: { cli?: RunCli } = {}) {
       } satisfies ScreenResult;
     };
 
-    const [chief] = await db
-      .select()
-      .from(bot)
-      .where(and(eq(bot.ownerUserId, owner), eq(bot.kind, "chief"), eq(bot.archived, false)))
-      .orderBy(asc(bot.createdAt))
-      .limit(1);
+    const chief = await chiefFor(db, owner);
     if (!chief || chief.harness === "fixture" || chief.harness === "decision")
       return finish(
         false,

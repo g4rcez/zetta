@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { serverOrigin } from "@/lib/server-origin";
+import { withWorkspace } from "@/lib/workspace-scope";
 import { cn } from "@zetta/ui/lib/utils";
 
 type Phase = "connecting" | "live" | "ended" | "unavailable";
@@ -24,7 +26,10 @@ export function StepOutput({ url, label }: { url: string; label: string }) {
   useEffect(() => {
     setText("");
     setPhase("connecting");
-    const source = new EventSource(url, { withCredentials: true });
+    // An EventSource sends no custom header: the workspace goes in the address.
+    const source = new EventSource(withWorkspace(new URL(url, serverOrigin())).href, {
+      withCredentials: true,
+    });
     source.onopen = () => {
       setText("");
       setPhase("live");

@@ -62,7 +62,7 @@ export async function raiseAttention(
     .insert(attentionItem)
     .values(values)
     .onConflictDoUpdate({
-      target: [attentionItem.ownerUserId, attentionItem.sourceKey],
+      target: [attentionItem.workspaceId, attentionItem.ownerUserId, attentionItem.sourceKey],
       targetWhere: sql`${attentionItem.sourceKey} is not null and ${attentionItem.status} in ('open', 'acknowledged')`,
       set: {
         title: values.title,

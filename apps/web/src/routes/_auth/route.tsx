@@ -11,7 +11,12 @@ import { cachedAuthGuard } from "@/lib/auth-guard";
 import { useLiveEvents } from "@/lib/live-events";
 import { SidebarDataProvider } from "@/features/chat/sidebar-data";
 import { call } from "@/features/chat/chat-client";
-import { IdentityRequestError, getIdentityError, identityClient } from "@/lib/identity-client";
+import {
+  IdentityRequestError,
+  getIdentityError,
+  identityClient,
+  isRootIdentity,
+} from "@/lib/identity-client";
 
 function CheckingMembership() {
   return (
@@ -34,8 +39,8 @@ export const Route = createFileRoute("/_auth")({
       if (identity.state !== "active") throw redirect({ to: "/login" });
       const session = await sessionRequest;
       if (!session.data) throw redirect({ to: "/login" });
-      // A new account (not the installation admin, who has the first-run setup) sets up its own Chief and engine first.
-      if (!identity.isAdmin) {
+      // A new account (not the person who set the server up, who has the first-run setup) sets up its own Chief and engine first.
+      if (!isRootIdentity(identity)) {
         const onboarding = await call<{ preferences: { memberOnboarding?: string } }>(
           "/api/preferences",
         )

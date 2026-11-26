@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "engine_account_one_workspace" ON "zetta"."engine_account" ("workspace_id","engine") WHERE "use" = 'workspace' and "state" = 'active';--> statement-breakpoint
+ALTER TABLE "zetta"."engine_account" DROP CONSTRAINT "engine_account_use_check", ADD CONSTRAINT "engine_account_use_check" CHECK ("use" in ('default', 'extra', 'workspace'));

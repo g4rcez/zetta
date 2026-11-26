@@ -226,7 +226,12 @@ export function createKnowledge(
         .insert(knowledgeSource)
         .values({ ownerUserId: a.userId, provider: PROVIDER, account: acc.email })
         .onConflictDoUpdate({
-          target: [knowledgeSource.ownerUserId, knowledgeSource.provider, knowledgeSource.account],
+          target: [
+            knowledgeSource.workspaceId,
+            knowledgeSource.ownerUserId,
+            knowledgeSource.provider,
+            knowledgeSource.account,
+          ],
           set: { status: "idle", lastError: null, nextSyncAt: new Date() },
         });
     return status(a);

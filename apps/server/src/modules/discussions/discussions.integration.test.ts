@@ -1,7 +1,7 @@
 import { uuidv7 } from "@zetta/core/uuid";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createDb } from "@zetta/db";
-import { and, desc, eq, inArray } from "@zetta/db/query";
+import { and, desc, eq, inArray, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
 import { bot, message } from "@zetta/db/schema/chat";
 import { attentionItem } from "@zetta/db/schema/features";
@@ -1890,9 +1890,13 @@ suite("group discussions against compose postgres", () => {
         () => (finished = true),
       );
       while (!finished) {
-        const blocked = await db.$client.query(
-          "select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' limit 1",
-        );
+        // As the login: the app's role sees no other session's wait (packages/db/src/index.ts).
+        const blocked = await db.transaction(async (tx) => {
+          await tx.execute(sql`set local role none`);
+          return tx.execute(
+            sql`select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' limit 1`,
+          );
+        });
         if (blocked.rows.length) break;
         await new Promise<void>((r) => setImmediate(r));
       }

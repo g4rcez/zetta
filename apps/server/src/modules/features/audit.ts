@@ -29,6 +29,9 @@ export async function audit(
     usage?: { input: number; cacheRead: number; cacheWrite: number; output: number };
     /** How long a `harness_run` took, in ms (the bot's numbers read the median and the slowest 10%). */
     durationMs?: number;
+    /** A `harness_run` on an agent account: the account, and its owner when that is not the person who asked. */
+    accountId?: string | null;
+    payerUserId?: string | null;
   },
 ) {
   try {
@@ -39,6 +42,8 @@ export async function audit(
       botId: e.botId ?? null,
       subjectId: e.subjectId ?? null,
       detail: e.detail && SAFE_DETAIL.test(e.detail) ? e.detail : null,
+      accountId: e.accountId ?? null,
+      payerUserId: e.payerUserId ?? null,
       inputTokens: e.usage?.input ?? null,
       cacheReadTokens: e.usage?.cacheRead ?? null,
       cacheWriteTokens: e.usage?.cacheWrite ?? null,

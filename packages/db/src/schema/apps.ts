@@ -1,17 +1,20 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
   primaryKey,
   text,
   timestamp,
+  type AnyPgColumn,
+  unique,
   uniqueIndex,
   uuid,
-  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -102,6 +105,7 @@ export type AppSettings = {
 export const app = zetta.table(
   "app",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -127,8 +131,9 @@ export const app = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("app_id_workspace_unique").on(t.id, t.workspaceId),
     uniqueIndex("app_owner_slug_active_idx")
-      .on(t.ownerUserId, t.slug)
+      .on(t.workspaceId, t.ownerUserId, t.slug)
       .where(sql`${t.status} = 'active'`),
     index("app_owner_idx").on(t.ownerUserId),
     check("app_slug_check", sql`${t.slug} ~ '^[a-z][a-z0-9-]{0,39}$'`),
@@ -140,6 +145,7 @@ export const app = zetta.table(
 export const appVersion = zetta.table(
   "app_version",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -164,6 +170,13 @@ export const appVersion = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "app_version_app_id_workspace_fkey",
+      columns: [t.appId, t.workspaceId],
+      foreignColumns: [app.id, app.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     uniqueIndex("app_version_app_n_idx").on(t.appId, t.n),
     check("app_version_note_check", sql`length(${t.note}) <= 500`),
   ],
@@ -173,6 +186,7 @@ export const appVersion = zetta.table(
 export const botApp = zetta.table(
   "bot_app",
   {
+    workspaceId: inWorkspace(),
     botId: uuid("bot_id")
       .notNull()
       .references(() => bot.id, restrict),
@@ -181,7 +195,17 @@ export const botApp = zetta.table(
       .references(() => app.id, restrict),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [primaryKey({ columns: [t.botId, t.appId] }), index("bot_app_app_idx").on(t.appId)],
+  (t) => [
+    foreignKey({
+      name: "bot_app_bot_id_workspace_fkey",
+      columns: [t.botId, t.workspaceId],
+      foreignColumns: [bot.id, bot.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    primaryKey({ columns: [t.botId, t.appId] }),
+    index("bot_app_app_idx").on(t.appId),
+  ],
 );
 
 /**
@@ -192,6 +216,7 @@ export const botApp = zetta.table(
 export const appCall = zetta.table(
   "app_call",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -220,6 +245,13 @@ export const appCall = zetta.table(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t) => [
+    foreignKey({
+      name: "app_call_app_id_workspace_fkey",
+      columns: [t.appId, t.workspaceId],
+      foreignColumns: [app.id, app.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     index("app_call_app_idx").on(t.appId, t.createdAt),
     index("app_call_actor_idx").on(t.actorUserId, t.createdAt),
     index("app_call_proposal_idx").on(t.proposalId),
@@ -234,6 +266,7 @@ export const appCall = zetta.table(
 export const appRecord = zetta.table(
   "app_record",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -250,6 +283,13 @@ export const appRecord = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "app_record_app_id_workspace_fkey",
+      columns: [t.appId, t.workspaceId],
+      foreignColumns: [app.id, app.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     uniqueIndex("app_record_key_idx").on(
       t.appId,
       sql`coalesce(${t.userId}, '')`,

@@ -1,9 +1,10 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq } from "@zetta/db/query";
+import { and, eq } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
 import type { z } from "zod";
 import { firstObject } from "./bot-interview";
 import { HarnessError, harnessMessage, runCli, type NativeHarness, type RunCli } from "./harness";
+import { chiefFor } from "../workspaces/chief";
 
 export type OneShotResult<T> = { kind: "ok"; value: T } | { kind: "unavailable"; reason: string };
 
@@ -21,16 +22,15 @@ export function createOneShot(db: Pick<Database, "select">, deps: { cli?: RunCli
     /** Run on this bot's own engine (it must be the owner's) instead of the chief's. */
     useBot?: string,
   ): Promise<OneShotResult<z.infer<S>>> {
-    const [chief] = await db
-      .select()
-      .from(bot)
-      .where(
-        useBot
-          ? and(eq(bot.ownerUserId, owner), eq(bot.id, useBot), eq(bot.archived, false))
-          : and(eq(bot.ownerUserId, owner), eq(bot.kind, "chief"), eq(bot.archived, false)),
-      )
-      .orderBy(asc(bot.createdAt))
-      .limit(1);
+    const chief = useBot
+      ? (
+          await db
+            .select()
+            .from(bot)
+            .where(and(eq(bot.ownerUserId, owner), eq(bot.id, useBot), eq(bot.archived, false)))
+            .limit(1)
+        )[0]
+      : await chiefFor(db, owner);
     if (!chief)
       return {
         kind: "unavailable",

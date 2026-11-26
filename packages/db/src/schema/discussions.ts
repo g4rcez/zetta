@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -13,6 +14,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
@@ -31,6 +33,7 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
 export const botPeer = zetta.table(
   "bot_peer",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -59,6 +62,7 @@ export const botPeer = zetta.table(
 export const discussion = zetta.table(
   "discussion",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -119,6 +123,7 @@ export const discussion = zetta.table(
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   },
   (t) => [
+    unique("discussion_id_workspace_unique").on(t.id, t.workspaceId),
     index("discussion_origin_conversation_id_idx").on(t.originConversationId),
     index("discussion_created_by_bot_id_idx").on(t.createdByBotId),
     index("discussion_team_id_idx").on(t.teamId),
@@ -130,10 +135,10 @@ export const discussion = zetta.table(
       .where(sql`${t.status} = 'open'`),
     /** Names of active rooms (discussions of a team) are unique per owner; a closed room frees its name. */
     uniqueIndex("discussion_room_name_unique")
-      .on(t.ownerUserId, sql`lower(${t.title})`)
+      .on(t.workspaceId, t.ownerUserId, sql`lower(${t.title})`)
       .where(sql`${t.teamId} is not null and ${t.status} in ('open', 'paused', 'stalled')`),
     uniqueIndex("discussion_open_key")
-      .on(t.ownerUserId, t.openKey)
+      .on(t.workspaceId, t.ownerUserId, t.openKey)
       .where(sql`${t.status} in ('open', 'paused', 'stalled')`),
     check("discussion_title_check", sql`length(btrim(${t.title})) between 1 and 120`),
     check(
@@ -152,6 +157,7 @@ export const discussion = zetta.table(
 export const discussionMember = zetta.table(
   "discussion_member",
   {
+    workspaceId: inWorkspace(),
     discussionId: uuid("discussion_id")
       .notNull()
       .references(() => discussion.id, restrict),
@@ -164,6 +170,13 @@ export const discussionMember = zetta.table(
     joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "discussion_member_discussion_id_workspace_fkey",
+      columns: [t.discussionId, t.workspaceId],
+      foreignColumns: [discussion.id, discussion.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     index("discussion_member_bot_id_idx").on(t.botId),
     primaryKey({ columns: [t.discussionId, t.botId] }),
     check("discussion_member_role_check", sql`length(${t.role}) <= 200`),
@@ -174,6 +187,7 @@ export const discussionMember = zetta.table(
 export const discussionTurn = zetta.table(
   "discussion_turn",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -238,6 +252,7 @@ export type TurnStep = {
 export const turnStep = zetta.table(
   "turn_step",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

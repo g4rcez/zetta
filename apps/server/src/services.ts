@@ -4,7 +4,7 @@ import { createHostCuaDriver } from "./modules/computer/drivers/host-cua";
 import { connectStdio } from "./modules/computer/mcp-client";
 import { ComputerError } from "./modules/computer/service";
 import { createAuth, mcpResource } from "@zetta/auth";
-import { createDb } from "@zetta/db";
+import { createDb, databaseRole } from "@zetta/db";
 import { type ResolvedDatabase, resolveDatabase } from "@zetta/db/embedded/resolve";
 import { and, eq, sql } from "@zetta/db/query";
 import { bot } from "@zetta/db/schema/chat";
@@ -89,7 +89,9 @@ import { createProgress } from "./modules/learning/progress";
 import { createLessonTools } from "./modules/learning/workflow-tool";
 import { createLessonWorkflow } from "./modules/learning/workflow-template";
 import { withTokenAudit } from "./modules/learning/cli";
-import { cliWith } from "./modules/chat/harness";
+import { cliWith, setAccountRefused, setRunAccounts, setRunMeter } from "./modules/chat/harness";
+import { createOperator } from "./modules/workspaces/operator";
+import { createQuotas } from "./modules/workspaces/quotas";
 import { createAnalyzerFor } from "./modules/bots/import/analyze";
 import { createGrokSource } from "./modules/bots/import/grok-source";
 import { createBotImport } from "./modules/bots/import/service";
@@ -138,9 +140,14 @@ import { createDiscussionWorker } from "./modules/discussions/worker";
 import { createInbound } from "./modules/inbound/service";
 import { createBotClaude } from "./modules/bot-claude/store";
 import { createEnrollmentService } from "./modules/identity/enrollment";
+import { adminLifecycleHooks, enrollmentHooks } from "./modules/workspaces/identity-hooks";
+import { createWorkspaceLookup } from "./modules/workspaces/lookup";
+import { createWorkspaceService } from "./modules/workspaces/service";
+import { createEngineAccounts } from "./modules/engine-accounts/service";
+import { createSignIns } from "./modules/engine-accounts/sign-in";
+import { transportKeyring } from "./modules/connections/transport";
 import {
   createIdentityAccess,
-  createMembershipLookup,
   issueBackgroundActor,
   type ActiveActor,
 } from "./modules/identity/access";
@@ -171,6 +178,19 @@ const reloaded = globalThis as {
 // An empty DATABASE_URL starts (or adopts) the Postgres that ships inside Zetta and applies pending migrations before anything reads it.
 export const database = (reloaded.zettaDatabase ??= await resolveDatabase(ENV));
 export const db = (reloaded.zettaDb ??= createDb({ DATABASE_URL: database.url }));
+// The wall between workspaces holds only for a role that row rules hold: not a superuser, not one that skips them. A server for many
+// organizations (`ZETTA_MODE=app`) does not start without it; a server of one's own says so and goes on.
+{
+  const role = await databaseRole(db);
+  if (role.superuser || role.bypass) {
+    const why = `the database role ${role.role} is ${role.superuser ? "a superuser" : "allowed to skip row rules"}, so nothing keeps one workspace from another's data`;
+    if (process.env.ZETTA_MODE === "app")
+      throw new Error(
+        `Zetta will not start: ${why}. Apply the migrations, which make the app's role.`,
+      );
+    console.warn(`[db] ${why}.`);
+  }
+}
 // `decisions` is created further down; the callback only runs on a later settings update, after it exists.
 const installation = createInstallationService(db, (s) =>
   decisions.setMode(s.laya, {
@@ -254,13 +274,13 @@ const authConfig = {
 export const auth = memoizeSession(
   createAuth(authConfig, db, trustedExtraOrigins, {
     invitationSignupVerifier: createInvitationSignupPreflight(db),
-    firstAccount: createFirstAccountSetup(db, setupKey),
+    firstAccount: createFirstAccountSetup(db, setupKey, adminLifecycleHooks),
   }),
 );
-const membershipLookup = createMembershipLookup(db);
+const membershipLookup = createWorkspaceLookup(db);
 export const identity = {
   access: createIdentityAccess(auth, membershipLookup),
-  enrollment: createEnrollmentService(db),
+  enrollment: createEnrollmentService(db, enrollmentHooks),
   setupOpen: createSetupState(db),
   verifySetupKey: (key: string) => matchesConnectionKey(key, setupKey),
 };
@@ -743,6 +763,19 @@ const memory = createMemory(db, { embedder });
 const decisionRouting = createRouting(db, decisions, jev);
 // Claude Code live input, light runs and host skills are settings read on every run: the CLI functions carry the settings service.
 const harnessCli = cliWith(settings);
+// Agent accounts: whose subscription or key a run uses. The runner asks before it starts any CLI, whoever called it.
+export const engineAccounts = createEngineAccounts(db, {
+  connections,
+  serverLogin: async () => ((await settings.get("serverLogin")) === "off" ? "off" : "allowed"),
+  actorFor: (userId) => issueBackgroundActor(membershipLookup, userId),
+  audit: (userId, event) => void audit(db, userId, { kind: "connection", outcome: "ok", ...event }),
+});
+setRunAccounts((run) => engineAccounts.forRun(run));
+// Every bot run counts against its workspace's limits, which root sets (modules/workspaces/quotas.ts).
+const quotas = createQuotas(db);
+setRunMeter(quotas.meter);
+const signIns = createSignIns({ accounts: engineAccounts });
+setAccountRefused(({ accountId }) => void signIns.recheck(accountId).catch(() => undefined));
 const turnRunner = createTurnRunner(
   db,
   harnessCli.run,
@@ -752,6 +785,7 @@ const turnRunner = createTurnRunner(
   (b, text, userId) =>
     decisionRouting.reply(b, text, userId ? { userId, isAdmin: false } : undefined),
   settings,
+  engineAccounts,
 );
 // Bots learn from finished work and the chief reviews the memory, through the same turn runner as the chat.
 const memoryJobs = createMemoryJobs(db, {
@@ -820,6 +854,22 @@ export const updateChecker = createUpdateChecker({
   ...(runsWork ? { onVerdict: (v) => syncUpdateCard(db, v) } : { lazy: true }),
 });
 export const settingsServices = { access: identity.access, settings };
+export const engineAccountServices = {
+  access: identity.access,
+  accounts: engineAccounts,
+  signIns,
+  keyring: transportKeyring,
+  botFor: (actor: ActiveActor, botId: string) => chatServices.chat.visibleBot(actor, botId),
+};
+export const workspaceServices = {
+  access: identity.access,
+  operator: createOperator(db, { quotas, audit: (userId, event) => void audit(db, userId, event) }),
+  workspaces: createWorkspaceService(db, {
+    audit: (userId, event) => void audit(db, userId, event),
+    people: createPeopleDirectory(db),
+    invite: (actor, input) => identity.enrollment.issueInvitation(actor, input),
+  }),
+};
 export const installationServices = {
   access: identity.access,
   installation,

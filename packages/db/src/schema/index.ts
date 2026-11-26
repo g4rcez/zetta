@@ -1,5 +1,7 @@
 export * from "./auth";
 export * from "./identity";
+export * from "./workspaces";
+export * from "./engine-accounts";
 export * from "./connections";
 export * from "./runs";
 export * from "./dispatch";

@@ -8,6 +8,7 @@ import { BotCurrentTask, BotStatusLabel } from "@/components/bot-status";
 import { useBotStatus } from "../bots/status";
 import { BotReportsTo } from "../org/reports-to";
 import type { Attachment, Bot } from "./chat-client";
+import { BotEngineChoice } from "../engine-accounts/bot-engine-choice";
 
 const size = (bytes: number) =>
   bytes < 1024
@@ -77,6 +78,7 @@ export function ChatDetails({
             {bot.description && (
               <p className="text-sm text-pretty text-muted-foreground">{bot.description}</p>
             )}
+            {!bot.canEdit && <BotEngineChoice botId={bot.id} />}
             {bot.canEdit && (
               <Link
                 to="/bots/$botId/settings"

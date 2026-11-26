@@ -31,7 +31,7 @@ export function createSettingsRoutes(
     if (e instanceof SettingsError)
       return e.code === "UNKNOWN_KEY"
         ? fail(404, "NOT_FOUND", e.message)
-        : e.code === "SENSITIVE"
+        : e.code === "SENSITIVE" || e.code === "ROOT_ONLY"
           ? fail(403, "ACCESS_DENIED", e.message)
           : fail(400, "INVALID_REQUEST", e.message);
     if (e instanceof z.ZodError)

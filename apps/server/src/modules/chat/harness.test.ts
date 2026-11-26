@@ -976,3 +976,151 @@ describe("supportsLiveShell", () => {
     expect(supportsLiveShell("win32", true)).toBe(true);
   });
 });
+
+// The account of a run (modules/engine-accounts) is asked of whoever registered, for every caller, before any CLI starts.
+describe.skipIf(process.platform === "win32")("the account of a run", () => {
+  const { setRunAccounts } = require("./harness") as typeof import("./harness");
+  const show = () =>
+    script(
+      'echo "token=${RUN_TOKEN:-none} folder=${RUN_FOLDER:-none} caller=${CALLER:-none} server=${ZETTA_SECRET:-none}"',
+    );
+
+  test("its variables reach the CLI, and win over what the caller passed", async () => {
+    const fake = await show();
+    const folder = await mkdtemp(join(tmpdir(), "zetta-account-"));
+    const asked: unknown[] = [];
+    setRunAccounts(async (run) => {
+      asked.push(run);
+      return {
+        accountId: "acc-1",
+        ownerUserId: "owner",
+        env: { RUN_TOKEN: "theirs" },
+        folder: { path: join(folder, "cli"), variable: "RUN_FOLDER" },
+      };
+    });
+    const used: unknown[] = [];
+    try {
+      const out = await runCli({
+        harness: "pi",
+        prompt: "x",
+        model: null,
+        userId: "asker",
+        payerUserId: "owner",
+        botId: "bot-1",
+        extraEnv: { RUN_TOKEN: "from-the-caller", CALLER: "kept" },
+        onAccount: (u) => used.push(u),
+        resolve: () => fake,
+      });
+      expect(out).toBe(`token=theirs folder=${join(folder, "cli")} caller=kept server=none`);
+      expect(asked).toEqual([
+        { harness: "pi", userId: "asker", payerUserId: "owner", botId: "bot-1" },
+      ]);
+      expect(used).toEqual([{ harness: "pi", accountId: "acc-1", ownerUserId: "owner" }]);
+    } finally {
+      setRunAccounts(undefined);
+    }
+  });
+
+  test("no account: the run is the server's own sign-in, and says so", async () => {
+    const fake = await show();
+    setRunAccounts(async () => undefined);
+    const used: unknown[] = [];
+    try {
+      const out = await runCli({
+        harness: "pi",
+        prompt: "x",
+        model: null,
+        userId: "asker",
+        onAccount: (u) => used.push(u),
+        resolve: () => fake,
+      });
+      expect(out).toBe("token=none folder=none caller=none server=none");
+      expect(used).toEqual([{ harness: "pi" }]);
+    } finally {
+      setRunAccounts(undefined);
+    }
+  });
+
+  test("a person with no account, where the server's sign-in is not for them, starts no CLI", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "zetta-ran-"));
+    const fake = await script(`touch ${join(dir, "ran")}; echo started`);
+    setRunAccounts(async () => {
+      throw new HarnessError("auth_required");
+    });
+    try {
+      const code = await runCli({
+        harness: "pi",
+        prompt: "x",
+        model: null,
+        userId: "asker",
+        resolve: () => fake,
+      }).then(
+        () => "ok",
+        (e) => (e as HarnessError).code,
+      );
+      expect(code).toBe("auth_required");
+      expect(await Bun.file(join(dir, "ran")).exists()).toBe(false);
+    } finally {
+      setRunAccounts(undefined);
+    }
+  });
+
+  test("a sign-in the engine refuses is reported with the account the run used, and no other failure is", async () => {
+    const { setAccountRefused } = require("./harness") as typeof import("./harness");
+    const refused: unknown[] = [];
+    setAccountRefused((run) => refused.push(run));
+    const run = async (body: string, account: boolean) => {
+      setRunAccounts(async () =>
+        account ? { accountId: "acc-1", ownerUserId: "owner", env: {} } : undefined,
+      );
+      return runCli({
+        harness: "pi",
+        prompt: "x",
+        model: null,
+        userId: "asker",
+        resolve: await script(body).then((fake) => () => fake),
+      }).then(
+        () => "ok",
+        (e) => (e as HarnessError).code,
+      );
+    };
+    try {
+      expect(await run('echo "Not logged in. Please run /login" >&2; exit 1', true)).toBe(
+        "auth_required",
+      );
+      expect(refused).toEqual([{ accountId: "acc-1", harness: "pi" }]);
+      // The same refusal on the server's own sign-in has no account to report.
+      expect(await run('echo "Not logged in" >&2; exit 1', false)).toBe("auth_required");
+      // A spent quota and any other failure leave the account alone.
+      expect(await run('echo "usage limit reached" >&2; exit 1', true)).toBe("quota");
+      expect(await run('echo "segfault" >&2; exit 1', true)).toBe("failed");
+      expect(refused).toHaveLength(1);
+    } finally {
+      setRunAccounts(undefined);
+      setAccountRefused(undefined);
+    }
+  });
+
+  test("in a container the account's folder is mounted, and its secret is named, never written", () => {
+    const args = dockerArgs(
+      {
+        bin: "docker",
+        image: "img",
+        network: "none",
+        memory: "1g",
+        cpus: "1",
+        pids: 64,
+        engine: "docker",
+      } as never,
+      {
+        name: "run-1",
+        argv: ["pi", "-p", "x"],
+        accountDir: "/data/engine-accounts/acc-1",
+        env: { RUN_TOKEN: "theirs", RUN_FOLDER: "/zetta-account" },
+      },
+    );
+    expect(args.join(" ")).toContain("-v /data/engine-accounts/acc-1:/zetta-account:rw");
+    expect(args.join(" ")).toContain("-e RUN_TOKEN");
+    expect(args.join(" ")).not.toContain("theirs");
+  });
+});

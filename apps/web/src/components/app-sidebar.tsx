@@ -37,6 +37,7 @@ import {
 import { isRailTab } from "@/features/studio/studio-tabs";
 import { UpdateMark } from "@/features/updates/update-mark";
 
+import { WorkspaceSwitcher } from "@/features/workspace/workspace-switcher";
 import { Logo } from "./logo";
 import { PauseAgentsButton } from "@/features/agents/pause-agents";
 import { ModeToggle } from "./mode-toggle";
@@ -572,6 +573,10 @@ export function AppSidebar({
             </button>
           </RailHint>
         )}
+      </div>
+      {/* The workspace this tab works in, and the others the person is in. */}
+      <div className={cn("shrink-0 px-2 pb-1", collapsed && "flex justify-center")}>
+        <WorkspaceSwitcher collapsed={collapsed} />
       </div>
       {/* Remounts when the layout is switched by hand, so the new body fades in (index.css ".sidebar-swap"); never on load. */}
       <div key={swaps} className={cn("flex min-h-0 flex-1 flex-col", swaps > 0 && "sidebar-swap")}>

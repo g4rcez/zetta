@@ -2,15 +2,18 @@ import { sql } from "drizzle-orm";
 import {
   bytea,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
   primaryKey,
   text,
   timestamp,
+  unique,
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -61,6 +64,7 @@ export type PlaygroundFileSnapshot = { path: string; content: string };
 export const playground = zetta.table(
   "playground",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -81,6 +85,7 @@ export const playground = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("playground_id_workspace_unique").on(t.id, t.workspaceId),
     index("playground_owner_idx").on(t.ownerUserId),
     check("playground_title_check", sql`length(btrim(${t.title})) between 1 and 120`),
     check("playground_entry_check", sql`length(${t.entry}) between 1 and 300`),
@@ -91,6 +96,7 @@ export const playground = zetta.table(
 export const playgroundFile = zetta.table(
   "playground_file",
   {
+    workspaceId: inWorkspace(),
     playgroundId: uuid("playground_id")
       .notNull()
       .references(() => playground.id, restrict),
@@ -100,6 +106,13 @@ export const playgroundFile = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "playground_file_playground_id_workspace_fkey",
+      columns: [t.playgroundId, t.workspaceId],
+      foreignColumns: [playground.id, playground.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.playgroundId, t.path] }),
     check(
       "playground_file_path_check",
@@ -112,6 +125,7 @@ export const playgroundFile = zetta.table(
 export const playgroundRun = zetta.table(
   "playground_run",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -138,13 +152,24 @@ export const playgroundRun = zetta.table(
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
-  (t) => [index("playground_run_playground_idx").on(t.playgroundId, t.startedAt)],
+  (t) => [
+    unique("playground_run_id_workspace_unique").on(t.id, t.workspaceId),
+    foreignKey({
+      name: "playground_run_playground_id_workspace_fkey",
+      columns: [t.playgroundId, t.workspaceId],
+      foreignColumns: [playground.id, playground.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
+    index("playground_run_playground_idx").on(t.playgroundId, t.startedAt),
+  ],
 );
 
 /** A file the script wrote to `out/`, kept with its run. */
 export const playgroundRunOutput = zetta.table(
   "playground_run_output",
   {
+    workspaceId: inWorkspace(),
     runId: uuid("run_id")
       .notNull()
       .references(() => playgroundRun.id, restrict),
@@ -154,6 +179,13 @@ export const playgroundRunOutput = zetta.table(
     size: integer("size").notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "playground_run_output_run_id_workspace_fkey",
+      columns: [t.runId, t.workspaceId],
+      foreignColumns: [playgroundRun.id, playgroundRun.workspaceId],
+    })
+      .onDelete("restrict")
+      .onUpdate("restrict"),
     primaryKey({ columns: [t.runId, t.path] }),
     check(
       "playground_run_output_path_check",

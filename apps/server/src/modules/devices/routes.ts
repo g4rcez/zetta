@@ -1,4 +1,5 @@
 import { MCP_SCOPES, requireMcpAuth } from "@zetta/auth";
+import { tenant } from "@zetta/db";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import { ComputerError } from "../computer/service";
@@ -109,19 +110,24 @@ export function createDeviceRoutes(
       beforeHandle({ deviceAuth, status }) {
         if (!deviceAuth) return status(401);
       },
+      // A socket's callbacks run outside the request that opened it: each works in the device's own workspace.
       open(ws) {
-        const id = ws.data.deviceAuth!.id;
+        const { id, workspaceId } = ws.data.deviceAuth!;
         const socket = { send: (data: string) => void ws.send(data), close: () => ws.close() };
         (ws.data as { socket?: typeof socket }).socket = socket;
-        hub.attach(id, socket);
-        void devices.touch(id).catch(() => {});
+        tenant.run(workspaceId, () => {
+          hub.attach(id, socket);
+          void devices.touch(id).catch(() => {});
+        });
       },
       message(ws, message) {
-        const id = ws.data.deviceAuth!.id;
+        const { id, workspaceId } = ws.data.deviceAuth!;
         const text = typeof message === "string" ? message : JSON.stringify(message);
-        // A keep-alive from the app: remembered as the last time this computer was seen.
-        if (text === "ping") return void devices.touch(id).catch(() => {});
-        hub.receive(id, text);
+        tenant.run(workspaceId, () => {
+          // A keep-alive from the app: remembered as the last time this computer was seen.
+          if (text === "ping") return void devices.touch(id).catch(() => {});
+          hub.receive(id, text);
+        });
       },
       close(ws) {
         const socket = (ws.data as { socket?: { send(d: string): void; close(): void } }).socket;

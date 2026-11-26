@@ -1,6 +1,16 @@
 import { sql } from "drizzle-orm";
-import { check, index, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import {
+  check,
+  foreignKey,
+  index,
+  text,
+  timestamp,
+  unique,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot } from "./chat";
@@ -32,6 +42,7 @@ export const PROJECT_BRIEF_MAX = 1000;
 export const project = zetta.table(
   "project",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -53,9 +64,10 @@ export const project = zetta.table(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    unique("project_id_workspace_unique").on(t.id, t.workspaceId),
     index("project_owner_idx").on(t.ownerUserId, t.status),
     uniqueIndex("project_owner_name_unique")
-      .on(t.ownerUserId, sql`lower(${t.name})`)
+      .on(t.workspaceId, t.ownerUserId, sql`lower(${t.name})`)
       .where(sql`${t.status} <> 'archived'`),
     check("project_name_check", sql`length(btrim(${t.name})) between 1 and 120`),
     check(
@@ -72,6 +84,7 @@ export const project = zetta.table(
 export const projectMember = zetta.table(
   "project_member",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -85,6 +98,13 @@ export const projectMember = zetta.table(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
+    foreignKey({
+      name: "project_member_project_id_workspace_fkey",
+      columns: [t.projectId, t.workspaceId],
+      foreignColumns: [project.id, project.workspaceId],
+    })
+      .onDelete("cascade")
+      .onUpdate("restrict"),
     uniqueIndex("project_member_bot_unique")
       .on(t.projectId, t.botId)
       .where(sql`${t.kind} = 'bot'`),

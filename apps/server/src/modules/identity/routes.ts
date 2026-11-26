@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { z } from "zod";
+import { INVITE_ROLES } from "@zetta/core/workspace";
 import { AccessError, type createIdentityAccess } from "./access";
 import type { createEnrollmentService } from "./enrollment";
 
@@ -25,6 +26,9 @@ const boundedString = z
 const issueInput = z.strictObject({
   intendedEmail: boundedString.regex(/^[^\s@]+@[^\s@]+$/),
   intendedUserId: boundedString.optional(),
+  // What the workspace gives with the membership (modules/workspaces): a role, and a bot of the inviter's as the person's Chief.
+  role: z.enum(INVITE_ROLES).optional(),
+  chiefBotId: z.uuid().optional(),
 });
 const acceptInput = z.strictObject({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
 const setupKeyInput = z.strictObject({ key: z.string().min(1).max(512) });

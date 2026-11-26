@@ -12,6 +12,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation, message } from "./chat";
@@ -28,6 +29,7 @@ const created = () => timestamp("created_at", { withTimezone: true }).defaultNow
 export const inboundRoute = zetta.table(
   "inbound_route",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -58,7 +60,7 @@ export const inboundRoute = zetta.table(
   (t) => [
     index("inbound_route_bot_id_idx").on(t.botId),
     uniqueIndex("inbound_route_owner_plugin_unique")
-      .on(t.ownerUserId, t.pluginId)
+      .on(t.workspaceId, t.ownerUserId, t.pluginId)
       .where(sql`${t.mailboxId} is null`),
     uniqueIndex("inbound_route_mailbox_unique")
       .on(t.mailboxId)
@@ -72,6 +74,7 @@ export const inboundRoute = zetta.table(
 export const inboundThread = zetta.table(
   "inbound_thread",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),
@@ -98,6 +101,7 @@ export const inboundThread = zetta.table(
 export const inboundEvent = zetta.table(
   "inbound_event",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

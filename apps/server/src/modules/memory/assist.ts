@@ -1,6 +1,5 @@
 import type { Database } from "@zetta/db";
-import { and, asc, eq, inArray, ne, sql } from "@zetta/db/query";
-import { bot } from "@zetta/db/schema/chat";
+import { and, inArray, ne, sql } from "@zetta/db/query";
 import { MEMORY_RELATIONS, memoryItem, type MemoryRelation } from "@zetta/db/schema/memory";
 import { z } from "zod";
 import { firstObject } from "../chat/bot-interview";
@@ -14,6 +13,7 @@ import {
 import { unsafeMemory } from "../features/knowledge";
 import { looksSecret } from "../features/safety";
 import { visibleTo, memoryLinks, memorySlug, memoryTags, type Memory } from "./service";
+import { chiefFor } from "../workspaces/chief";
 
 const TIMEOUT_MS = 60_000;
 const CANDIDATES = 20,
@@ -116,12 +116,7 @@ function prompt(
 export function createMemoryAssist(db: Database, deps: { memory: Memory; cli?: RunCli }) {
   const cli = deps.cli ?? runCli;
   return async function assist(owner: string, input: AssistInput): Promise<AssistResult> {
-    const [chief] = await db
-      .select()
-      .from(bot)
-      .where(and(eq(bot.ownerUserId, owner), eq(bot.kind, "chief"), eq(bot.archived, false)))
-      .orderBy(asc(bot.createdAt))
-      .limit(1);
+    const chief = await chiefFor(db, owner);
     if (!chief)
       return {
         kind: "unavailable",

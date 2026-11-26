@@ -22,12 +22,41 @@ Decisions from spec review:
 - **Keys:** workspace key plus an optional personal key per member.
 - **Payments: skipped.** Assumption to confirm: plans, usage metering and quota enforcement stay in; no payment provider and no invoicing.
 
+## Roles and root (built)
+
+The order of delivery is roles first, then agent accounts per person, then the wall between workspaces (P2 onward). What exists:
+
+- **Tables:** `workspace`, `workspace_member(workspace_id, user_id, role owner|admin|member, status)`, `invitation_grant(invitation_id, workspace_id, role admin|member, chief_bot_id)` and `chief_share(user_id, bot_id, granted_by_user_id)`. Schema: `packages/db/src/schema/workspaces.ts`. Role rules, pure and shared with the web app: `packages/core/src/workspace.ts`.
+- **`membership` stays.** It still says whether a person may use the server at all, with its activation revision, and the identity proofs keep the shape they pin. `workspace_member` says where a person is and as what. The same goes for `invitation`: what an invitation gives beyond the membership is in `invitation_grant`.
+- **Written together.** The workspace rows are written inside the identity transactions through hooks (`apps/server/src/modules/workspaces/identity-hooks.ts`): the first account gets the first workspace as its owner, an accepted invitation places the person with the invitation's role and Chief, and a replaced admin hands the ownership over. A database with no workspace tables (the operator command's proof) is left alone.
+- **Root** is `installation_identity.admin_user_id`: the platform operator of this document. Root always administers, also with a missing or hand-edited workspace row. What belongs to the whole server is root's: settings of scope `installation`, every sensitive setting, the installation routes and the keys of the server's own services.
+- **Actor:** `{ userId, isAdmin, isRoot, workspaceId, role }` (`modules/identity/access.ts`, `modules/workspaces/lookup.ts`). `isAdmin` means owner or administrator of the workspace.
+- **A shared Chief** (`modules/workspaces/chief.ts`): a bot its owner gave to a person as their Chief. `chiefFor(userId)` answers for every place that asks for "this person's Chief". The bot follows the rules of a bot someone else owns (`chat/shared-bot-policy.ts`).
+  People-facing guide: [docs/operations/workspace-people.md](../operations/workspace-people.md).
+
+## The wall between workspaces (built)
+
+P2 to P7 below are built. How they work, and where they differ from this spec:
+
+- **Columns** (migration `workspace_wall_columns`). 109 tables carry `workspace_id` (schema helper `inWorkspace()`, `packages/db/src/schema/workspace-table.ts`), NOT NULL, defaulting to `app.workspace_id`. The migration made the first workspace on a database with none and filled every existing row with it. 33 child tables point at their parent through `(parent_id, workspace_id)`; the other references stay plain, since the app reads what they point at through the wall. 30 unique rules start with `workspace_id`. The Chief share and the learning policy are one per person in each workspace.
+- **Shared tables.** Besides sign-in and the installation, these stay shared, with no rule: a person's preferences, their sealing key, push subscriptions, the run dispatch tables (owner-filtered, pinned by their own proofs), phone opt-outs, and the bookkeeping of workspaces (members, invitation grants, quotas, usage). The test `workspaces/wall.integration.test.ts` fails for any other table without the wall.
+- **Rules** (migration `workspace_wall_rules`). One rule on every workspace table, `FORCE`d, for every role: a row is seen and written only when `app.workspace_id` is its workspace; anything else matches nothing. The app runs every query as `zetta_app` (NOLOGIN, no superuser, no bypass), which the migration creates and grants to the login that runs it: the pool switches to it on each new connection (`packages/db/src/index.ts`). So the wall holds where the login is a superuser too (local installs, tests), and no second `DATABASE_URL` is needed. Operator scripts that cross workspaces open their pool with `wall: "off"`.
+- **No scheduler or operator role.** Background work runs once per active workspace, inside it (`modules/workspaces/each.ts`): each unit's own query then finds only that workspace's due rows, with no change to it. What arrives from outside with no person (a call, a device, a webhook trigger) is routed with `tenant.scan`: `app.workspace_id = '*'` reads 10 routing tables across workspaces through a SELECT-only rule, sees nothing else and writes nothing; the request then claims the row's workspace. Export and delete run as the app, inside the workspace's own context.
+- **Context** (`packages/db/src/tenant.ts`). A request runs in an open slot that the identity check fills with the person's workspace; a background actor fills it only when it is still empty (an MCP token). Socket callbacks, phone calls and run tool callbacks carry the workspace they were started in. A query builder handed back unstarted is started inside the context.
+- **Several workspaces per person.** The web app keeps the workspace in the address as `?w=<slug>` on every page (the root route retains it) and sends it as `X-Zetta-Workspace` on every call; not `/w/$slug` routes, which would have moved every route file. The identity lookup takes it only for an active member of an active workspace, and otherwise the person's first. An MCP client adds `?w=` to its address. Live event hints stay per person: they carry no data, and each tab refetches in its own workspace.
+- **Root.** Root owns the first workspace, whatever its row says, and has no seat in another organization's workspace. Root starts one by making it and inviting its owner from inside it (the first person root invites into an empty workspace is its owner). A person already on the server joins another workspace with an invitation at `POST /api/workspace/join`: the identity operation refuses invitations for active members, and its proofs pin that.
+- **Settings.** An organization-scope setting changed by a workspace's administrator is that workspace's; readers take the value of the workspace they run in.
+- **App mode** (`ZETTA_MODE=app`): no work runs without a workspace, the server refuses a database role that skips the wall, bots run only in a container and never on the host network, and nobody runs on the server's own CLI sign-in. A workspace's owners and administrators can connect an agent account for the whole workspace.
+- **Quotas** (`modules/workspaces/quotas.ts`): bot runs and their seconds per workspace per month, counted by the runner for every run, limits set by root, checked when a run starts. No storage quota and no event ledger.
+- **Export and delete** (`modules/workspaces/operator.ts`): a copy is every row of the workspace's tables as gzipped JSON lines, read through the wall, without the sealed secrets, downloaded directly by its owner or root. A delete closes the workspace, clears references that may be empty, deletes the rest in the order the database's own keys give, and keeps the row marked deleted. Files on disk other than agent account folders are not part of either. There is no per-workspace data key: a person's secrets are sealed under their own key, and a delete removes the sealed rows.
+- **Left out:** a folder per workspace on disk (files are reached only through rows the wall holds), and `identity_audit.workspace_id`.
+
 ## 1. Data model
 
 New tables. All ids use `uuidv7()` and all states are string enums.
 
 - `workspace(id, slug unique, name, status active|suspended|deleting|deleted, plan_id, created_at)`
-- `workspace_member(workspace_id, user_id, role owner|admin|member, status active|removed, activation_revision, joined_at, removed_at)`, PK `(workspace_id, user_id)`. It replaces `membership` (`packages/db/src/schema/identity.ts:7`) and keeps the activation-revision rule that `team_person` depends on.
+- `workspace_member(workspace_id, user_id, role owner|admin|member, status active|removed, joined_at, removed_at)`, PK `(workspace_id, user_id)`. `membership` (`packages/db/src/schema/identity.ts:7`) stays beside it as the server-level gate and keeps the activation revision that `team_person` depends on (see "Roles and root" above).
 - `workspace_key`: a per-workspace data key wrapped by the deployment key, copying the `connection_user_key` pattern (`schema/connections.ts:184`). Shredding it makes the workspace's secrets unreadable.
 
 Changes to existing tables:

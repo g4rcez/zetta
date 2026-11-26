@@ -95,6 +95,7 @@ describe("registry invariants", () => {
       allowPrivateNetwork: "off",
       codeAccess: "on",
       hostRunner: "auto",
+      serverLogin: "allowed",
       wahaUrl: "",
     };
     for (const [key, value] of Object.entries(expected))

@@ -44,10 +44,11 @@ import {
   type GitIdentity,
   type McpRun,
   type NativeHarness,
+  type OnAccount,
   type RunCli,
   type StreamCli,
 } from "./harness";
-import { createMembershipLookup } from "../identity/access";
+import { createWorkspaceLookup } from "../workspaces/lookup";
 import { ORG_BOT_TOOLS } from "./chief/prompt";
 import { MACHINE_TOOLS, toolPreamble } from "./tools";
 import type { CliProgress, TokenUsage } from "./claude-stream";
@@ -107,11 +108,29 @@ export type TurnRetrieval = {
  */
 export type WithoutItems = { memory: boolean; skills: boolean };
 /** userId is the requesting user: memory and instructions always come from them, never from the bot owner. */
+/**
+ * Who decides the engine of a turn and whose agent account pays for it (modules/engine-accounts): a person who is not the bot's owner
+ * runs the engine and model they chose for it, and a shared bot may run on its owner's account.
+ */
+export type TurnEngines = {
+  forTurn<B extends Bot>(turn: {
+    bot: B;
+    userId: string;
+    room?: boolean | undefined;
+  }): Promise<{ bot: B; payerUserId: string }>;
+};
+
 export type Turn = {
   signal?: AbortSignal | undefined;
   parentMessageId?: string | null;
   userId: string;
   bot: Bot;
+  /** The turn is a bot's answer in a room: a bot shared there may run on its owner's account. */
+  room?: boolean | undefined;
+  /** Whose agent account pays. Set by the runner from `TurnEngines`; a caller leaves it out. */
+  payerUserId?: string | undefined;
+  /** Called with the engine and the agent account each run of this turn uses. */
+  onAccount?: OnAccount | undefined;
   history: readonly { role: string; content: string }[];
   prompt: string;
   /** Shared by all runs of one turn (the first answer and every tool-loop round): documents and memory items are searched once, with the first prompt. */
@@ -254,10 +273,18 @@ export function createTurnRunner(
   decide?: (b: Bot, text: string, userId?: string) => Promise<string>,
   /** Where the setting `hostSkills` is read, on every run. The live-input and light-run switches are read by `stream` (see `cliWith`). */
   settings?: SettingsReader,
+  /** Per-person engines and accounts. Without it every turn runs the bot's own engine, for the person who asks. */
+  engines?: TurnEngines,
 ) {
+  /** The turn with the engine this person runs the bot on, and who pays for it. */
+  const withEngine = async (turn: Turn): Promise<Turn> => {
+    if (!engines || turn.payerUserId) return turn;
+    const chosen = await engines.forTurn({ bot: turn.bot, userId: turn.userId, room: turn.room });
+    return { ...turn, bot: chosen.bot, payerUserId: chosen.payerUserId };
+  };
   const knowledge = createKnowledge(db);
   const botClaude = createBotClaude(db, { settings });
-  const membership = createMembershipLookup(db);
+  const membership = createWorkspaceLookup(db);
   /**
    * Claude Code loads a host skill (bot-claude/host-skills.ts) by itself only from ~/.claude/skills, and only when the run shares the
    * server user's HOME. Any other host skill is installed in the run's plugin dir instead (see `claudeFor`).
@@ -339,6 +366,8 @@ export function createTurnRunner(
     onFallback?: (use: FallbackUse) => void,
     skills?: readonly string[],
     system?: string,
+    payerUserId?: string,
+    onAccount?: OnAccount,
   ) {
     if (b.harness === "fixture")
       return fixtureResponder({ bot: b, history, prompt: joinSystem(system, prompt) });
@@ -354,6 +383,8 @@ export function createTurnRunner(
           model: x.model,
           userId,
           botId: x.id,
+          ...(payerUserId ? { payerUserId } : {}),
+          ...(onAccount ? { onAccount } : {}),
           ...(await codeFor(db, x, userId, noCode)),
           ...(profile.profile ? profile : {}),
           ...(extraEnv ? { extraEnv } : {}),
@@ -678,7 +709,8 @@ export function createTurnRunner(
     lookup.catch(() => {});
     return lookup;
   };
-  async function run(turn: Turn): Promise<TurnResult> {
+  async function run(given: Turn): Promise<TurnResult> {
+    const turn = await withEngine(given);
     const lookup = lookupWhilePreparing(turn.bot, turn.skills, turn.without?.skills);
     const p = await prepare(turn);
     if ("stop" in p) return p.stop;
@@ -698,12 +730,15 @@ export function createTurnRunner(
       turn.onFallback,
       turn.skills,
       p.system,
+      turn.payerUserId,
+      turn.onAccount,
     );
     startBackground(turn.userId, turn.bot, p.background);
     return { text: reply, stopped: false };
   }
   /** Same pipeline, but yields reply text as it is produced, and progress lines (`{ activity }`) while the bot works. */
-  async function* streamTurn(turn: Turn): AsyncGenerator<string | CliProgress, void> {
+  async function* streamTurn(given: Turn): AsyncGenerator<string | CliProgress, void> {
+    const turn = await withEngine(given);
     const lookup = lookupWhilePreparing(turn.bot, turn.skills, turn.without?.skills);
     const p = await prepare(turn);
     if ("stop" in p) {
@@ -741,6 +776,8 @@ export function createTurnRunner(
             model: x.model,
             userId: turn.userId,
             botId: x.id,
+            ...(turn.payerUserId ? { payerUserId: turn.payerUserId } : {}),
+            ...(turn.onAccount ? { onAccount: turn.onAccount } : {}),
             ...(primary ? code : await codeFor(db, x, turn.userId, turn.noCode)),
             ...(await (primary ? lookup : claudeFor(x, turn.skills, turn.without?.skills))),
             ...(turn.extraEnv ? { extraEnv: turn.extraEnv } : {}),

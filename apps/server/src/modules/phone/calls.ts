@@ -13,6 +13,7 @@
  * account (docs/operations/phone.md).
  */
 import { normalizeE164, type PhoneSettings } from "@zetta/core/phone";
+import { tenant } from "@zetta/db";
 import type { Database } from "@zetta/db";
 import { and, eq, gt, inArray, ne, or, sql } from "@zetta/db/query";
 import { user } from "@zetta/db/schema/auth";
@@ -171,6 +172,8 @@ type LiveCall = {
   readonly providerName: PhoneProviderId;
   /** The provider account the call runs on: only its events reach the call. */
   readonly account: string;
+  /** The workspace the call is in: its later webhooks and its audio stream, which arrive with no person, work there. */
+  readonly workspaceId: string | undefined;
   bind(callControlId: string): void;
   /** The answering machine detection said who picked up. */
   machine(result: "human" | "machine"): void;
@@ -368,10 +371,13 @@ export function createPhoneCalls(deps: PhoneCallDeps) {
     const playback = createPlayback({ clock, sleep, leadMs: deps.leadMs });
     const out = new FrameChunker();
     const inbound = new FrameChunker();
+    // Made inside the request or turn that started the call, so this is the call's workspace (packages/db/src/tenant.ts).
+    const workspaceId = tenant.current();
     const rec: LiveCall = {
       get id() {
         return controlId;
       },
+      workspaceId,
       rowId: init.rowId,
       ownerId,
       providerName: init.provider.name,
@@ -983,7 +989,17 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
       }
     }
 
+    /** The audio stream opens from a socket that carries no workspace: the call and what it does on it run in the call's own. */
     function attach(s: PhoneSocket, o: { streamSid?: string } = {}): PhoneStreamHandle {
+      if (!workspaceId) return attachStream(s, o);
+      const handle = tenant.run(workspaceId, () => attachStream(s, o));
+      return {
+        message: (data) => tenant.run(workspaceId, () => handle.message(data)),
+        closed: () => tenant.run(workspaceId, () => handle.closed()),
+      };
+    }
+
+    function attachStream(s: PhoneSocket, o: { streamSid?: string } = {}): PhoneStreamHandle {
       socket = s;
       if (o.streamSid) streamSid = o.streamSid;
       if (connectTimer !== null) clock.clearTimeout(connectTimer);
@@ -1055,12 +1071,16 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
     const callId = ev.callControlId;
     if (!callId || ev.direction !== "incoming" || live.has(callId)) return;
     const to = normalizeE164(ev.to ?? "");
+    // The number is found across workspaces (a call names no workspace), and the call is answered in the number's own.
     const [number] = to
-      ? await db
-          .select()
-          .from(phoneNumber)
-          .where(and(eq(phoneNumber.e164, to), ne(phoneNumber.status, "released")))
+      ? await tenant.scan(() =>
+          db
+            .select()
+            .from(phoneNumber)
+            .where(and(eq(phoneNumber.e164, to), ne(phoneNumber.status, "released"))),
+        )
       : [];
+    if (number) tenant.claim(number.workspaceId);
     // A number this installation does not hold, one that belongs to the other provider or another account, or speech the phone cannot
     // use (the browser voice): not answered, nothing to say. Nothing is recorded for the number before this.
     if (
@@ -1183,6 +1203,8 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
     const found = live.get(ev.callControlId ?? "");
     // Only the account a call runs on may speak about it.
     const call = found?.account === provider.account ? found : undefined;
+    // A webhook carries no person: the rest of it works in the call's workspace.
+    if (call?.workspaceId) tenant.claim(call.workspaceId);
     switch (ev.type) {
       case "call.initiated":
         return initiated(ev, provider);

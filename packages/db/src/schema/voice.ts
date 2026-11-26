@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { zetta } from "./pg-schema";
+import { inWorkspace } from "./workspace-table";
 
 import { user } from "./auth";
 import { bot, conversation } from "./chat";
@@ -56,6 +57,7 @@ export type VoiceCallOutcome = (typeof VOICE_CALL_OUTCOMES)[number];
 export const voiceCall = zetta.table(
   "voice_call",
   {
+    workspaceId: inWorkspace(),
     id: uuid("id")
       .primaryKey()
       .default(sql`uuidv7()`),

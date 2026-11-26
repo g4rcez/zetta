@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { z } from "zod";
-import { AccessError, type createIdentityAccess } from "../identity/access";
+import { AccessError, type createIdentityAccess, isRoot } from "../identity/access";
 import { isLayaTag } from "@zetta/core/laya-languages";
 import {
   InvalidInstallationError,
@@ -301,7 +301,7 @@ export function createInstallationRoutes(
           const denied = rejectUntrustedOrigin(request, trustedOrigins);
           if (denied) return denied;
           const actor = await access.requireActive(request.headers);
-          if (!("isAdmin" in actor && actor.isAdmin)) throw new AccessError("ACCESS_DENIED");
+          if (!("isAdmin" in actor && isRoot(actor))) throw new AccessError("ACCESS_DENIED");
           const patch = patchInput.parse(raw);
           if (patch.transcribeBaseUrl !== undefined) await checkBaseUrl(patch.transcribeBaseUrl);
           if (patch.speechBaseUrl !== undefined)
@@ -319,7 +319,7 @@ export function createInstallationRoutes(
           const denied = rejectUntrustedOrigin(request, trustedOrigins);
           if (denied) return denied;
           const actor = await access.requireActive(request.headers);
-          if (!("isAdmin" in actor && actor.isAdmin) || !speech)
+          if (!("isAdmin" in actor && isRoot(actor)) || !speech)
             throw new AccessError("ACCESS_DENIED");
           const now = Date.now();
           const recent = (testCalls.get(`speech:${actor.userId}`) ?? []).filter(
@@ -369,7 +369,7 @@ export function createInstallationRoutes(
           const denied = rejectUntrustedOrigin(request, trustedOrigins);
           if (denied) return denied;
           const actor = await access.requireActive(request.headers);
-          if (!("isAdmin" in actor && actor.isAdmin) || !mail)
+          if (!("isAdmin" in actor && isRoot(actor)) || !mail)
             throw new AccessError("ACCESS_DENIED");
           const now = Date.now();
           const recent = (testCalls.get(`mail:${actor.userId}`) ?? []).filter(
@@ -427,7 +427,7 @@ export function createInstallationRoutes(
           const denied = rejectUntrustedOrigin(request, trustedOrigins);
           if (denied) return denied;
           const actor = await access.requireActive(request.headers);
-          if (!("isAdmin" in actor && actor.isAdmin) || !phone)
+          if (!("isAdmin" in actor && isRoot(actor)) || !phone)
             throw new AccessError("ACCESS_DENIED");
           const now = Date.now();
           const recent = (testCalls.get(`phone:${actor.userId}`) ?? []).filter(
@@ -512,7 +512,7 @@ export function createInstallationRoutes(
           const denied = rejectUntrustedOrigin(request, trustedOrigins);
           if (denied) return denied;
           const actor = await access.requireActive(request.headers);
-          if (!("isAdmin" in actor && actor.isAdmin) || !waha)
+          if (!("isAdmin" in actor && isRoot(actor)) || !waha)
             throw new AccessError("ACCESS_DENIED");
           const now = Date.now();
           const recent = (testCalls.get(`waha:${actor.userId}`) ?? []).filter(
@@ -536,7 +536,7 @@ export function createInstallationRoutes(
           const denied = rejectUntrustedOrigin(request, trustedOrigins);
           if (denied) return denied;
           const actor = await access.requireActive(request.headers);
-          if (!("isAdmin" in actor && actor.isAdmin) || !transcriber)
+          if (!("isAdmin" in actor && isRoot(actor)) || !transcriber)
             throw new AccessError("ACCESS_DENIED");
           const now = Date.now();
           const recent = (testCalls.get(actor.userId) ?? []).filter((t) => now - t < 60_000);

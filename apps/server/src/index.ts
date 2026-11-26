@@ -1,4 +1,5 @@
 import { initLogger } from "evlog";
+import { forEachWorkspace } from "./modules/workspaces/each";
 
 import { createApp } from "./app";
 import { createBackground } from "./background";
@@ -53,6 +54,8 @@ import {
   identity,
   installationServices,
   settingsServices,
+  workspaceServices,
+  engineAccountServices,
   eventServices,
   loopServices,
   taskFollowUp,
@@ -105,6 +108,8 @@ createApp({
   identity,
   installation: installationServices,
   settings: settingsServices,
+  workspaces: workspaceServices,
+  engineAccounts: engineAccountServices,
   chat: chatServices,
   events: eventServices,
   features: featureServices,
@@ -187,30 +192,34 @@ signals.zettaSignals =
 // so it must run in exactly one process (the worker, or the single `all` process).
 if (runsWork) {
   const background = createBackground();
+  // Background work runs for one workspace at a time (modules/workspaces/each.ts).
+  const each = (work: () => unknown) => forEachWorkspace(db, work);
   // Work of a dead process is recovered by the one that is alive: at boot (including rows written before owners were recorded, when no
   // other worker is alive) and on every tick (a peer that died while this one ran). Work of a live process is never touched.
   async function recoverDead(boot: boolean) {
     const scope = await instance.recoveryScope(boot);
-    await chatServices.chat.recoverInterrupted(scope);
-    // A spoken call whose server is gone cannot be live any more.
-    await voiceServices.voice.recover(scope);
-    // A `bun --hot` reload keeps the instance id, so its own running turns are not "dead": the once-per-process guards only save work.
-    await Promise.all([
-      discussionServices.store.recover(scope),
-      inboundServices.inbound.recover(scope),
-      chatServices.chat.recoverQueue(scope),
-    ]);
-    await background.run("recover:features", () => featureServices.features.recover(scope, boot));
-    await loopServices.driver.tick();
-    // Claude Code runs a dead process cut off continue in their own sessions. At boot, once per process.
+    // Claude Code runs a dead process cut off continue in their own sessions. At boot, once per process: decided before the workspaces run,
+    // so the first one does not change it for the rest.
     const g = globalThis as { zettaResumed?: boolean };
-    if (boot && g.zettaResumed) chatServices.chat.takeResumable();
-    else {
-      if (boot) g.zettaResumed = true;
-      await resumeInterruptedRuns();
-    }
-    // Messages queued before are answered in order.
-    await chatServices.chat.drainQueues();
+    const resumed = boot && g.zettaResumed === true;
+    if (boot) g.zettaResumed = true;
+    await each(async () => {
+      await chatServices.chat.recoverInterrupted(scope);
+      // A spoken call whose server is gone cannot be live any more.
+      await voiceServices.voice.recover(scope);
+      // A `bun --hot` reload keeps the instance id, so its own running turns are not "dead": the once-per-process guards only save work.
+      await Promise.all([
+        discussionServices.store.recover(scope),
+        inboundServices.inbound.recover(scope),
+        chatServices.chat.recoverQueue(scope),
+      ]);
+      await background.run("recover:features", () => featureServices.features.recover(scope, boot));
+      await loopServices.driver.tick();
+      if (resumed) chatServices.chat.takeResumable();
+      else await resumeInterruptedRuns();
+      // Messages queued before are answered in order.
+      await chatServices.chat.drainQueues();
+    });
   }
 
   // The routine jobs are armed apart from the recovery chain: a failure earlier in the chain must not leave every routine unscheduled
@@ -218,7 +227,7 @@ if (runsWork) {
   let routinesArmed = false;
   const armRoutines = async () => {
     if (routinesArmed) return;
-    await featureServices.features.armRoutines();
+    await each(() => featureServices.features.armRoutines());
     routinesArmed = true;
   };
 
@@ -229,34 +238,40 @@ if (runsWork) {
   ticker.zettaTick = setInterval(() => {
     void background.exclusive("recover", () => recoverDead(false));
     void background.run("routines:arm", armRoutines);
-    void background.run("agenda", () => agendaServices.scheduler.tick());
-    void background.run("knowledge", () => knowledgeServices.knowledge.tick());
-    void background.run("memory", () => memoryServices.memory.tick());
-    void background.run("memory:sources", () => memoryServices.memory.checkSources());
-    void background.run("memory:jobs", () => memoryServices.jobs.tick());
-    void background.run("skills:review", () => skillReview.tick());
-    void background.run("learning:outcomes", () => learning.outcomes.tick());
-    void background.run("learning:trial", () => lessonTrial.tick());
-    void background.run("learning:batch", () => lessonBatch.tick());
-    void background.run("learning:forget", () => lessonForget.tick());
-    void background.run("learning:tidy", () => lessonTidy.tick());
-    void background.run("workflows:resume", () => featureServices.features.workflows.tick());
-    void background.run("chat:summaries", () => chatSummaries.tick());
-    void background.run("rooms", () => discussionServices.worker.tick());
-    void background.run("inbound", () => inboundServices.inbound.tick());
-    void background.run("mail:bot-addresses", () => mailPoller.tick());
-    void background.run("phone:numbers", async () => {
-      await phoneServices.phone.syncPending();
-      await phoneServices.phone.releaseExpired();
-    });
-    void background.run("loops", () => loopServices.driver.tick());
-    void background.run("tasks:heartbeat", () => taskFollowUp.heartbeat.tick());
-    void background.run("work:scan", () => workServices.scan.due());
-    void background.run("chat:queues", () => chatServices.chat.drainQueues());
-    void background.run("chat:slow-turns", () => chatServices.chat.flagSlowTurns());
-    void background.run("chat:proposals", () => chatServices.chat.expireProposals());
-    void background.run("apps:pending", () => apps.expirePending());
-    void background.run("routines:triggers", () => featureServices.features.routineTriggers.tick());
+    void background.run("agenda", () => each(() => agendaServices.scheduler.tick()));
+    void background.run("knowledge", () => each(() => knowledgeServices.knowledge.tick()));
+    void background.run("memory", () => each(() => memoryServices.memory.tick()));
+    void background.run("memory:sources", () => each(() => memoryServices.memory.checkSources()));
+    void background.run("memory:jobs", () => each(() => memoryServices.jobs.tick()));
+    void background.run("skills:review", () => each(() => skillReview.tick()));
+    void background.run("learning:outcomes", () => each(() => learning.outcomes.tick()));
+    void background.run("learning:trial", () => each(() => lessonTrial.tick()));
+    void background.run("learning:batch", () => each(() => lessonBatch.tick()));
+    void background.run("learning:forget", () => each(() => lessonForget.tick()));
+    void background.run("learning:tidy", () => each(() => lessonTidy.tick()));
+    void background.run("workflows:resume", () =>
+      each(() => featureServices.features.workflows.tick()),
+    );
+    void background.run("chat:summaries", () => each(() => chatSummaries.tick()));
+    void background.run("rooms", () => each(() => discussionServices.worker.tick()));
+    void background.run("inbound", () => each(() => inboundServices.inbound.tick()));
+    void background.run("mail:bot-addresses", () => each(() => mailPoller.tick()));
+    void background.run("phone:numbers", () =>
+      each(async () => {
+        await phoneServices.phone.syncPending();
+        await phoneServices.phone.releaseExpired();
+      }),
+    );
+    void background.run("loops", () => each(() => loopServices.driver.tick()));
+    void background.run("tasks:heartbeat", () => each(() => taskFollowUp.heartbeat.tick()));
+    void background.run("work:scan", () => each(() => workServices.scan.due()));
+    void background.run("chat:queues", () => each(() => chatServices.chat.drainQueues()));
+    void background.run("chat:slow-turns", () => each(() => chatServices.chat.flagSlowTurns()));
+    void background.run("chat:proposals", () => each(() => chatServices.chat.expireProposals()));
+    void background.run("apps:pending", () => each(() => apps.expirePending()));
+    void background.run("routines:triggers", () =>
+      each(() => featureServices.features.routineTriggers.tick()),
+    );
     void background.run("updates:check", () => updateChecker.tick());
   }, 30_000);
 
@@ -268,11 +283,9 @@ if (runsWork) {
   const skillsBoot = globalThis as { zettaSkillFiles?: boolean };
   if (!skillsBoot.zettaSkillFiles) {
     skillsBoot.zettaSkillFiles = true;
-    void skillServices.skills
-      .backfillFiles(skillServices.market)
-      .catch((e) =>
-        console.error(`skills: backfill failed name=${(e as Error | undefined)?.name ?? typeof e}`),
-      );
+    void each(() => skillServices.skills.backfillFiles(skillServices.market)).catch((e) =>
+      console.error(`skills: backfill failed name=${(e as Error | undefined)?.name ?? typeof e}`),
+    );
   }
 
   // The record of which memory items past replies used (modules/learning), built from what replies already hold. Once per process, and
@@ -280,15 +293,14 @@ if (runsWork) {
   const learningBoot = globalThis as { zettaLearningBackfill?: boolean };
   if (!learningBoot.zettaLearningBackfill) {
     learningBoot.zettaLearningBackfill = true;
-    void learning.backfill
-      .run()
-      // The skills a bot learned before lessons existed become lessons too, so the page shows everything it learned.
-      .then(() => lessons.backfillSkills())
-      .catch((e) =>
-        console.error(
-          `learning: backfill failed name=${(e as Error | undefined)?.name ?? typeof e}`,
-        ),
-      );
+    void each(() =>
+      learning.backfill
+        .run()
+        // The skills a bot learned before lessons existed become lessons too, so the page shows everything it learned.
+        .then(() => lessons.backfillSkills()),
+    ).catch((e) =>
+      console.error(`learning: backfill failed name=${(e as Error | undefined)?.name ?? typeof e}`),
+    );
   }
 
   // Runs that were going when the previous process died are marked interrupted, once per process (`bun --hot` re-runs this module on every
@@ -296,13 +308,11 @@ if (runsWork) {
   const playgroundBoot = globalThis as { zettaPlaygroundSwept?: boolean };
   if (!playgroundBoot.zettaPlaygroundSwept) {
     playgroundBoot.zettaPlaygroundSwept = true;
-    void playgroundServices.playground
-      .interruptRunning()
-      .catch((e) =>
-        console.error(
-          `playground: boot sweep failed name=${(e as Error | undefined)?.name ?? typeof e}`,
-        ),
-      );
+    void each(() => playgroundServices.playground.interruptRunning()).catch((e) =>
+      console.error(
+        `playground: boot sweep failed name=${(e as Error | undefined)?.name ?? typeof e}`,
+      ),
+    );
     void playgroundServices.containers
       ?.sweep()
       .catch((e) =>
@@ -314,11 +324,11 @@ if (runsWork) {
 
   // Containers and Spaces left by a previous process are removed at boot (this server assumes it is the only instance).
   void background.run("sweep:harness", () => sweepHarnessContainers());
-  void background.run("sweep:computer", () => computerServices.computer.sweep());
+  void background.run("sweep:computer", () => each(() => computerServices.computer.sweep()));
   // Once per process: `bun --hot` re-runs this module on every edit, and sweeping then would stop the computers people are using.
   const boot = globalThis as { zettaVmSwept?: boolean };
   if (!boot.zettaVmSwept) {
     boot.zettaVmSwept = true;
-    void background.run("sweep:vm", async () => computerServices.vms?.sweep());
+    void background.run("sweep:vm", () => each(async () => computerServices.vms?.sweep()));
   }
 }

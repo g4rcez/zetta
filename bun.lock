@@ -74,6 +74,7 @@
         "mailparser": "^3.14.4",
         "node-schedule": "^2.1.2",
         "nodemailer": "^10.6.0",
+        "rolldown": "1.2.13",
         "sanitize-html": "^2.18.2",
         "unpdf": "^2.2.1",
         "varlock": "catalog:",

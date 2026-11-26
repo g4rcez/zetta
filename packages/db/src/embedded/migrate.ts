@@ -43,7 +43,8 @@ export async function materializeMigrations(source: string, layout: EmbeddedLayo
   return target;
 }
 
-async function appliedMigrations(pool: Pool) {
+/** The folder names the database already holds; empty for one nothing was ever applied to. */
+export async function appliedMigrations(pool: Pool) {
   try {
     const result = await pool.query("select name from drizzle.__drizzle_migrations");
     return result.rows.map((row) => String(row.name));

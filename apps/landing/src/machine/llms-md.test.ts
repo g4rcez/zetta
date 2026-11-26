@@ -64,6 +64,6 @@ describe("buildLlmsFull", () => {
     expect(full.endsWith("\n\n")).toBe(false);
   });
   test("says the guide is the intended journey", () => {
-    expect(full).toContain("intended v1 journey");
+    expect(full).toContain("The guide follows the jobs people do in Zetta");
   });
 });

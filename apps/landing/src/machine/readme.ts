@@ -3,9 +3,10 @@ import { REPO } from "../links";
 /** The parts of the repository's README a visitor needs; the rest (demo videos, interface references) is for people in the repository. */
 export const README_SECTIONS = [
   "Install",
+  "Infrastructure",
   "The experience",
   "What bots do",
-  "V1 capabilities",
+  "Capabilities",
   "Boundaries",
 ] as const;
 

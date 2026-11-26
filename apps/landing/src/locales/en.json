@@ -262,7 +262,7 @@
       "after": ""
     },
     "lead": "You need Git, OpenSSL and a running Docker or Podman. Zetta starts a web app, an API and a Postgres database.",
-    "note": "Free under the AGPL-3.0 license. It is early: read the repository and its issues before you depend on it.",
+    "note": "Free under the AGPL-3.0 license. The code, the docs and the issues are open on GitHub.",
     "badges": ["Free", "Open source", "Your server, your data"],
     "copy": "Copy",
     "copied": "Copied",

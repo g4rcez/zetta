@@ -52,7 +52,7 @@ export function buildLlmsFull({
   const parts = [
     home.trimEnd(),
     `## From the README\n\n${readme}`,
-    "## User guide\n\nThe guide describes the intended v1 journey, not a finished tutorial.",
+    "## User guide\n\nThe guide follows the jobs people do in Zetta, from the first bot to routines.",
     ...guides.map((p) => p.markdown.trimEnd()),
     changelogMarkdown(days).trimEnd(),
   ];

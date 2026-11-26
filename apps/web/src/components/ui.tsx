@@ -107,6 +107,10 @@ export const Menu = LibMenu;
 export const MenuItem = LibMenuItem;
 export const Dropdown = LibDropdown;
 
+/** A `Dropdown`'s own padding is for a free panel (about 20px). A list of menu rows needs 4px, a picker 8px: pass one as `className`. */
+export const DROPDOWN_ROWS = "[--var-dropdown-surface-padding:0.25rem]";
+export const DROPDOWN_PICKER = "[--var-dropdown-surface-padding:0.5rem]";
+
 /** A destructive menu item (Delete, Cancel): the danger color on a `MenuItem`. */
 export const MENU_DANGER = "text-[var(--var-color-danger)]";
 

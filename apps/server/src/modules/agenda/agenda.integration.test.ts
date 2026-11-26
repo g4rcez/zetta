@@ -681,7 +681,7 @@ suite("Agenda against compose postgres", () => {
       }[]
     ).filter((p) => p.kind === "bot_action");
     expect(cards).toHaveLength(1);
-    expect(cards[0]!.diff).toEqual([{ field: "agenda", from: null, to: "agenda add" }]);
+    expect(cards[0]!.diff).toEqual([{ field: "agenda", from: null, to: "agenda add Injected" }]);
     // Reject: nothing happens. A second ask and Approve: the item exists.
     await call(A, "POST", `/api/proposals/${cards[0]!.id}/decision`, { approve: false });
     expect(await injected()).toHaveLength(0);

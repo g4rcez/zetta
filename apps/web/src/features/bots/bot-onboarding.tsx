@@ -12,7 +12,6 @@ import {
 } from "@phosphor-icons/react";
 
 import { BOT_ROLE_MAX, botRole } from "@zetta/core/bot-role";
-import { UNVERIFIED_ENGINES } from "@zetta/core/maturity";
 import { AdvancedSection } from "@/components/advanced-section";
 import { BotAvatar, type AvatarValue } from "@/components/bot-avatar";
 import { EngineLogo } from "@/components/engine-logo";
@@ -27,7 +26,7 @@ import { BotAccounts } from "../chat/bot-accounts";
 import { BotAvatarPicker } from "../chat/bot-avatar-picker";
 import { BotDecision } from "../chat/bot-decision";
 import { BotHooks } from "../chat/bot-hooks";
-import { duplicateOf, isAllowedModel, modelOptions } from "../chat/bot-presets";
+import { duplicateOf, HARNESSES, isAllowedModel, modelOptions } from "../chat/bot-presets";
 import { registeredBotSections } from "../chat/bot-sections";
 import { chatClient, errorMessage, type Bot, type OutputStyleKey } from "../chat/chat-client";
 import { OutputStylePicker } from "../output-styles/output-style-picker";
@@ -144,13 +143,13 @@ const STEPS = [
 ] as const;
 const CREATE_AT = STEPS.findIndex((s) => s.id === "review");
 
-/** Verified harnesses get their own row; the rest share one "experimental" group so the same caveat isn't repeated five times. */
+/** The main harnesses get their own row; the rest share one group of small choices. */
 const PRIMARY_HARNESSES = [
   {
     id: "claude-code",
     name: "Claude Code",
     badge: "Recommended",
-    blurb: "Verified. Strong at reasoning, code and tool use.",
+    blurb: "Strong at reasoning, code and tool use.",
   },
   {
     id: "decision",
@@ -175,8 +174,8 @@ const ArtTile = ({ icon: Icon, tint }: { icon: PhosphorIcon; tint: string }) => 
   </span>
 );
 
-/** The engines that are not stable in `@zetta/core/maturity`; the page groups them under one caveat. */
-const EXPERIMENTAL_HARNESSES = UNVERIFIED_ENGINES;
+/** Every other engine a bot can run on; the page lists them together in one group. */
+const OTHER_HARNESSES = HARNESSES.filter((h) => !PRIMARY_HARNESSES.some((p) => p.id === h));
 
 /** Full-page, step-by-step "new bot" experience: explains each choice, reviews the instructions, then wires plugins, accounts and extras. */
 export function BotOnboarding({
@@ -1111,17 +1110,17 @@ export function EngineStep({
         </section>
       )}
       <AdvancedSection
-        {...((EXPERIMENTAL_HARNESSES as readonly string[]).includes(draft.harness)
+        {...((OTHER_HARNESSES as readonly string[]).includes(draft.harness)
           ? { defaultOpen: true }
           : {})}
         className="mt-6"
       >
         <Group
-          label="Not fully verified"
-          hint="At best one real answer was checked in Zetta; tools and isolation are not proved. Expect rough edges."
+          label="More engines"
+          hint="Each one runs its own CLI on the server, with that CLI's sign-in."
         >
           <div role="radiogroup" aria-label="Other engines" className="flex flex-wrap gap-2">
-            {EXPERIMENTAL_HARNESSES.map((h) => (
+            {OTHER_HARNESSES.map((h) => (
               <label
                 key={h}
                 className={`flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1 text-sm transition-colors has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ring ${draft.harness === h ? "border-primary bg-primary/[0.06] text-foreground" : "text-muted-foreground hover:border-foreground/25 hover:text-foreground"}`}

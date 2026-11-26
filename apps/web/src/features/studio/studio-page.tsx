@@ -14,14 +14,14 @@ import {
   SquaresFourIcon,
   type Icon,
 } from "@phosphor-icons/react";
-import { useNavigate, useParams, useRouteContext, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useRouteContext, useSearch } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Suspense, lazy, useRef, useState } from "react";
+import { Suspense, lazy, useState } from "react";
 
 import { type Bot } from "../chat/chat-client";
 import { chatQueries } from "../chat/chat-queries";
 import { Loading } from "../shared/ui";
-import { isRailTab, isStudioTab, studioTabs } from "./studio-tabs";
+import { isRailTab, studioTabs } from "./studio-tabs";
 import { useLoadError } from "./studio-queries";
 import { Alert } from "@g4rcez/components/alert";
 
@@ -78,35 +78,11 @@ export function StudioPage() {
   const navigate = useNavigate();
   const current = studioTabs.find((t) => t.slug === slug) ?? studioTabs[0];
   const tab: Tab = current.label;
-  const tabs = allTabs
-    .filter((t) => identity.isAdmin || !ADMIN_TABS.includes(t.slug))
-    .map((t) => t.label);
+  const tabs = allTabs.filter((t) => identity.isAdmin || !ADMIN_TABS.includes(t.slug));
   const { data, error: botsError } = useQuery(chatQueries.bots());
   const bots = data ?? NO_BOTS;
   const [error, setError] = useState<string>();
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   useLoadError(botsError, setError);
-  const select = (t: Tab) => {
-    setError(undefined);
-    const next = studioTabs.find((x) => x.label === t)!.slug;
-    if (isStudioTab(next)) void navigate({ to: "/studio/$tab", params: { tab: next } });
-  };
-  const onKey = (e: React.KeyboardEvent, i: number) => {
-    const to =
-      e.key === "ArrowRight"
-        ? (i + 1) % tabs.length
-        : e.key === "ArrowLeft"
-          ? (i + tabs.length - 1) % tabs.length
-          : e.key === "Home"
-            ? 0
-            : e.key === "End"
-              ? tabs.length - 1
-              : -1;
-    if (to < 0) return;
-    e.preventDefault();
-    select(tabs[to]!);
-    tabRefs.current[to]?.focus();
-  };
   const phoneSearch = parsePhoneSearch(search);
   const setPhoneSearch = (next: PhoneSearch, how: "push" | "replace") =>
     void navigate({
@@ -145,33 +121,22 @@ export function StudioPage() {
         >
           <h1 className="label-mono mb-3 hidden px-3 md:block">Studio</h1>
           <h1 className="sr-only md:hidden">Studio</h1>
-          <div
-            role="tablist"
-            aria-label="Studio"
-            aria-orientation="vertical"
-            className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0"
-          >
-            {tabs.map((t, i) => {
-              const Icon = ICON[t];
-              const active = t === tab;
+          <div className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
+            {tabs.map(({ slug: to, label }) => {
+              const Icon = ICON[label];
+              const active = label === tab;
               return (
-                <button
-                  key={t}
-                  ref={(el) => {
-                    tabRefs.current[i] = el;
-                  }}
-                  role="tab"
-                  id={`tab-${i}`}
-                  aria-selected={active}
-                  aria-controls="studio-panel"
-                  tabIndex={active || (i === 0 && !tabs.includes(tab)) ? 0 : -1}
-                  onKeyDown={(e) => onKey(e, i)}
-                  onClick={() => select(t)}
-                  className={`relative flex shrink-0 touch-manipulation items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${active ? "bg-accent font-medium text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+                <Link
+                  key={to}
+                  to="/studio/$tab"
+                  params={{ tab: to }}
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => setError(undefined)}
+                  className={`relative flex shrink-0 touch-manipulation items-center gap-2.5 whitespace-nowrap rounded-md px-3 py-2 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-ring ${active ? "bg-accent font-medium text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
                 >
-                  <Icon aria-hidden="true" className={`size-4 ${active ? "text-primary" : ""}`} />
-                  {t}
-                </button>
+                  <Icon aria-hidden="true" className="size-4" />
+                  {label}
+                </Link>
               );
             })}
           </div>
@@ -182,13 +147,7 @@ export function StudioPage() {
             <p className="text-sm text-pretty text-muted-foreground">{current.blurb}</p>
           </header>
           {error && <Alert theme="danger">{error}</Alert>}
-          <div
-            id="studio-panel"
-            role="tabpanel"
-            aria-labelledby={tabs.includes(tab) ? `tab-${tabs.indexOf(tab)}` : undefined}
-            aria-label={tabs.includes(tab) ? undefined : tab}
-            className="min-w-0"
-          >
+          <div id="studio-panel" className="min-w-0">
             <Suspense fallback={<Loading />}>
               {tab === "Overview" && <Overview onError={setError} />}
               {tab === "Output styles" && <OutputStyles onError={setError} />}

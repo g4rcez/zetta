@@ -105,7 +105,7 @@ suite("activity trail and harness readiness", () => {
     expect((await call(A, "GET", "/api/activity?limit=1")).json.events).toHaveLength(1);
   });
 
-  test("harness readiness distinguishes not installed / unverified / needs login and never returns paths", async () => {
+  test("harness readiness distinguishes not installed / installed / needs login and never returns paths", async () => {
     const r = await call(A, "GET", "/api/harnesses");
     expect(r.status).toBe(200);
     const byName = Object.fromEntries(
@@ -124,7 +124,7 @@ suite("activity trail and harness readiness", () => {
     expect(byName.cursor.status).toBe("not_installed");
     expect(byName.cursor.guidance).toContain("administrator");
     for (const h of Object.values(byName) as { installed: boolean; status: string }[])
-      if (h.installed) expect(["unverified", "needs_login", "ready"]).toContain(h.status);
+      if (h.installed) expect(["installed", "needs_login", "ready"]).toContain(h.status);
     expect(r.text).not.toMatch(/\/Users\/|\/opt\/|\/usr\//); // no filesystem paths
     // a recorded auth failure flips an installed harness to needs_login for that user only
     const piBot = (await call(A, "POST", "/api/bots", { name: "PiBot", harness: "pi" })).json.bot

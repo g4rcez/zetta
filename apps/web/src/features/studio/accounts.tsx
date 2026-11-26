@@ -32,7 +32,7 @@ const HARNESS_STATUS: Record<
   ready: { label: "Ready", tone: "success" },
   not_installed: { label: "Not installed", tone: "danger" },
   needs_login: { label: "Needs sign-in", tone: "warning" },
-  unverified: { label: "Not tested yet", tone: "neutral" },
+  installed: { label: "Installed", tone: "neutral" },
 };
 
 /** A titled block without card chrome: its rows carry the border. */
@@ -65,8 +65,8 @@ export function harnessGuidance(h: Harness): string {
       return h.perUserLogin
         ? "Your last run asked for a sign-in. Sign in to this tool with your own account, then chat again."
         : "Your last run asked for a sign-in. Ask the administrator to sign this tool in on the server.";
-    case "unverified":
-      return "It is installed but has not been used successfully yet. Send a test message with a bot that uses it.";
+    case "installed":
+      return "Installed on the server. Choose it for a bot to start using it.";
   }
 }
 const CONNECTION_STATE = (s: string) =>

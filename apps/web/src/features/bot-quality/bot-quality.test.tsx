@@ -122,9 +122,10 @@ async function mount(node: React.ReactNode) {
 const bot = { id: BOT, name: "Q", version: 3, harness: "claude-code" } as never;
 
 test("the thumbs rate a finished answer, show the choice and take it back", async () => {
+  const noted: number[] = [];
   sent.length = 0;
   ratings = {};
-  const { FeedbackProvider, RateButtons } = await import("./feedback");
+  const { FeedbackProvider, RateRows } = await import("./feedback");
   const row = {
     id: MSG,
     role: "assistant",
@@ -134,7 +135,7 @@ test("the thumbs rate a finished answer, show the choice and take it back", asyn
   } as never;
   const { unmount } = await mount(
     <FeedbackProvider conversationId={CONV}>
-      <RateButtons row={row} />
+      <RateRows row={row} onDone={() => {}} onNote={() => noted.push(1)} />
     </FeedbackProvider>,
   );
   expect(button("Good answer")?.getAttribute("aria-pressed")).toBe("false");
@@ -148,11 +149,20 @@ test("the thumbs rate a finished answer, show the choice and take it back", asyn
   await press("Good answer");
   expect(sent.at(-1)?.method).toBe("DELETE");
   expect(button("Good answer")?.getAttribute("aria-pressed")).toBe("false");
+  // A bad answer is saved at once and then asks what went wrong.
+  await press("Bad answer");
+  expect(sent.at(-1)).toEqual({
+    path: `/api/messages/${MSG}/feedback`,
+    method: "PUT",
+    body: { rating: "down", reason: "" },
+  });
+  expect(noted).toEqual([1]);
   await unmount();
 });
 
 test("a question, a reply still being written, or a log without a provider carries no thumbs", async () => {
-  const { FeedbackProvider, RateButtons } = await import("./feedback");
+  const { FeedbackProvider, RateRows } = await import("./feedback");
+  const none = () => {};
   const row = (over: object) =>
     ({
       id: MSG,
@@ -165,11 +175,11 @@ test("a question, a reply still being written, or a log without a provider carri
   const { unmount } = await mount(
     <>
       <FeedbackProvider conversationId={CONV}>
-        <RateButtons row={row({ role: "user" })} />
-        <RateButtons row={row({ streaming: true })} />
-        <RateButtons row={row({ status: "failed" })} />
+        <RateRows row={row({ role: "user" })} onDone={none} onNote={none} />
+        <RateRows row={row({ streaming: true })} onDone={none} onNote={none} />
+        <RateRows row={row({ status: "failed" })} onDone={none} onNote={none} />
       </FeedbackProvider>
-      <RateButtons row={row({})} />
+      <RateRows row={row({})} onDone={none} onNote={none} />
     </>,
   );
   expect(button("Good answer")).toBeUndefined();

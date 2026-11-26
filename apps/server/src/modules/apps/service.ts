@@ -148,6 +148,12 @@ export function createApps(db: Database, deps: Deps = {}) {
   const hostCode = deps.hostCode ?? (() => true);
   const limiter = createLimiter({ ...(deps.limits ?? { global: 4, perUser: 2 }), waitMs: 5000 });
   const tell = (...ids: string[]) => events.publish([...new Set(ids)], topics.apps);
+  /** One of the run slots of this person, waited for a short while. */
+  const slot = (actor: ActiveActor) =>
+    limiter.acquire(actor.userId).catch((e: unknown) => {
+      if (e instanceof HarnessError && e.code === "busy") throw new AppError("BUSY");
+      throw e;
+    });
 
   const visible = (actor: ActiveActor) =>
     and(
@@ -204,13 +210,7 @@ export function createApps(db: Database, deps: Deps = {}) {
     const picked = pickRunner(runners, runnerName, hostCode);
     if ("refused" in picked) throw new AppError("UNAVAILABLE", refusal(picked.refused, runnerName));
     const runner = picked.runner;
-    let release: () => void;
-    try {
-      release = await limiter.acquire(actor.userId);
-    } catch (e) {
-      if (e instanceof HarnessError && e.code === "busy") throw new AppError("BUSY");
-      throw e;
-    }
+    const release = await slot(actor);
     let r: RunResult;
     try {
       r = await runner(
@@ -566,13 +566,22 @@ export function createApps(db: Database, deps: Deps = {}) {
 
     // The page is built now, so serving it later is cheap and a version never changes. A build error is the person's to fix.
     let page: { html: string; bytes: number } | undefined;
-    if (uiEntry)
-      page = await buildAppUi({ files, entry: uiEntry }).catch((e: unknown) => {
-        throw new AppError("INVALID", `The page could not be built: ${uiBuildMessage(e)}`);
-      });
+    if (uiEntry) {
+      // A build holds a run slot, like a call: one person cannot start any number of them at once.
+      const release = await slot(actor);
+      try {
+        page = await buildAppUi({ files, entry: uiEntry }).catch((e: unknown) => {
+          throw new AppError("INVALID", `The page could not be built: ${uiBuildMessage(e)}`);
+        });
+      } finally {
+        release();
+      }
+    }
 
     // The code describes itself: run it in describe mode and read the tools it declares. A page-only app has none.
-    const runnerName: "host" | "container" = p.runner === "container" ? "container" : "host";
+    // A playground that would run on the server moves to the container runner where the server runner is turned off.
+    const runnerName: "host" | "container" =
+      p.runner === "container" || (!hostCode() && runners.container) ? "container" : "host";
     let declared: unknown = { sdk: SDK_VERSION, tools: [], accounts: {} };
     if (backend && o.describe) {
       const probe = { ...({} as AppRow), settings: { runner: runnerName } } as AppRow;

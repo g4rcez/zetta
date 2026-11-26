@@ -21,7 +21,7 @@ import { createTestSettings } from "./settings/testing";
 /**
  * RFC-067: representative v1 journeys end to end through the HTTP API. The model is a scripted fake wired into the REAL turn
  * pipeline (hooks, memory, instruction retrieval, tools, proposals), so these prove Zetta's behaviour, not any vendor model.
- * Real-model evidence is separate (claude-code/haiku opt-in test and the browser walkthrough in docs/verification/v1-workflows.md).
+ * Real-model evidence is separate (the claude-code/haiku opt-in test).
  */
 const url = process.env.ZETTA_CHAT_TEST_DATABASE_URL;
 const suite = url ? describe : describe.skip;

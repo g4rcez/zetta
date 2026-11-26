@@ -258,6 +258,7 @@ const NO_RETRY_NAMES = new Set(["DecisionUncertain", "AccessError", "WorkflowErr
 const NO_RETRY_CODES = new Set([
   "auth_required",
   "not_installed",
+  "no_safe_mode",
   "quota",
   "cancelled",
   "BOT_NOT_READY",

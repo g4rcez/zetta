@@ -143,7 +143,7 @@ export type Harness = {
   label: string;
   installed: boolean;
   version?: string | null;
-  status: "ready" | "not_installed" | "needs_login" | "unverified";
+  status: "ready" | "not_installed" | "needs_login" | "installed";
   perUserLogin: boolean;
   guidance?: string;
 };

@@ -217,18 +217,27 @@ function CsvViewer({ a }: { a: Artifact }) {
   );
 }
 
-function ImageViewer({ a }: { a: Artifact }) {
+/** Raster types, whose bytes cannot run anything. An SVG is a document: from a blob address it would run as the app. */
+const RASTER = /^image\/(?:png|jpeg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon)$/i;
+
+const Picture = ({ a, src }: { a: Artifact; src: string }) => (
+  <ZoomImage
+    src={src}
+    alt={a.title}
+    className="mx-auto max-h-[75vh] max-w-full rounded-lg border bg-muted/30"
+  />
+);
+
+function BlobImage({ a }: { a: Artifact }) {
   const src = useObjectUrl(a);
   if (src === undefined) return <Loading />;
   if (src === null) return <Gone />;
-  return (
-    <ZoomImage
-      src={src}
-      alt={a.title}
-      className="mx-auto max-h-[75vh] max-w-full rounded-lg border bg-muted/30"
-    />
-  );
+  return <Picture a={a} src={src} />;
 }
+
+/** Anything but a raster picture loads from the server, which sends it sandboxed. */
+const ImageViewer = ({ a }: { a: Artifact }) =>
+  RASTER.test(a.mimeType) ? <BlobImage a={a} /> : <Picture a={a} src={contentUrl(a.id)} />;
 
 const ENTRY_TEXT = /\.(txt|md|csv|tsv|json|html?|css|js|ts|tsx|jsx|py|sh|sql|ya?ml|toml|xml|log)$/i;
 /** Entries shown with syntax highlighting; the other text entries stay plain. */
@@ -309,6 +318,18 @@ function ZipViewer({ a }: { a: Artifact }) {
   );
 }
 
+/**
+ * The address of a picture taken out of a zip. A raster one gets a blob with its own type, so bytes that are something else are never
+ * read as a page; an SVG gets a `data:` address, which has no origin.
+ */
+export function entryImageUrl(name: string, bytes: Uint8Array) {
+  const kind = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+  if (kind === "svg")
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new TextDecoder().decode(bytes))}`;
+  const type = `image/${kind === "jpg" ? "jpeg" : kind}`;
+  return URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+}
+
 function ZipEntry({ data, entry }: { data: Uint8Array; entry: Entry }) {
   const bytes = useMemo(() => {
     if (entry.size > MAX_ENTRY) return undefined;
@@ -320,14 +341,7 @@ function ZipEntry({ data, entry }: { data: Uint8Array; entry: Entry }) {
   }, [data, entry]);
   const image = ENTRY_IMAGE.test(entry.name);
   const url = useMemo(
-    () =>
-      bytes && image
-        ? URL.createObjectURL(
-            new Blob([bytes as BlobPart], {
-              type: /\.svg$/i.test(entry.name) ? "image/svg+xml" : "",
-            }),
-          )
-        : undefined,
+    () => (bytes && image ? entryImageUrl(entry.name, bytes) : undefined),
     [bytes, image, entry.name],
   );
   useEffect(() => () => void (url && URL.revokeObjectURL(url)), [url]);

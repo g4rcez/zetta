@@ -1,6 +1,9 @@
-import { mkdir, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, resolve, sep } from "node:path";
+import { dataDir } from "@zetta/core/zetta-home";
+import { lstat, mkdir, mkdtemp, open, realpath, rm } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { DENIED } from "../chat/files";
+import { openInside, writeInside } from "../fs-inside";
+import type { Op } from "./machine-runner";
 import { ComputerError } from "./service";
 
 /**
@@ -52,6 +55,8 @@ export async function workspacePath(
       break;
     } catch (e) {
       if (e instanceof ComputerError) throw e;
+      // It cannot be resolved yet it is there: a link to a place that does not exist, which a write would create.
+      if (await lstat(probe).catch(() => undefined)) throw new ComputerError("INVALID");
       const up = dirname(probe);
       if (up === probe) throw new ComputerError("INVALID");
       probe = up;
@@ -60,4 +65,51 @@ export async function workspacePath(
   if (mode === "read") throw new ComputerError("NOT_FOUND");
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
   return target;
+}
+
+type Transfer = Extract<Op, { type: "get" | "put" }>;
+
+/**
+ * Runs a transfer through a folder of the server's own, which no bot can reach, so the transfer program never opens a path that a
+ * bot can change while it runs. An upload is copied out of the workspace first; a download is copied into it afterwards, and only
+ * when the program succeeded. `op.local` comes from `workspacePath(base, …)`.
+ */
+export async function stagedTransfer<T extends { exitCode: number } | undefined>(
+  base: string,
+  op: Transfer,
+  run: (op: Transfer) => Promise<T>,
+): Promise<T> {
+  const staging = dataDir("staging");
+  await mkdir(staging, { recursive: true, mode: 0o700 });
+  const folder = await mkdtemp(join(staging, "transfer-"));
+  try {
+    // The name is kept: a remote folder as the target takes it.
+    const staged = join(folder, basename(op.local));
+    if (op.type === "put") {
+      const source = await openInside(base, op.local);
+      if (!source) throw new ComputerError("NOT_FOUND");
+      try {
+        await writeInside(folder, staged, source.handle);
+      } finally {
+        await source.handle.close();
+      }
+    }
+    const result = await run({ ...op, local: staged });
+    if (op.type === "get" && result?.exitCode === 0) {
+      const got = await open(staged, "r").catch(() => undefined);
+      if (!got) throw new ComputerError("NOT_FOUND");
+      try {
+        // A link inside the workspace on the way to the target is fine when it stays inside; `writeInside` takes the real folder.
+        const root = await realpath(base);
+        const parent = await realpath(dirname(op.local));
+        if (parent !== root && !parent.startsWith(root + sep)) throw new ComputerError("INVALID");
+        await writeInside(root, join(parent, basename(op.local)), got);
+      } finally {
+        await got.close();
+      }
+    }
+    return result;
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
 }

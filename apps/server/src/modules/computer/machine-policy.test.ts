@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { guardedWords, ruleOf, workspacePath } from "./machine-policy";
+import { guardedWords, ruleOf, stagedTransfer, workspacePath } from "./machine-policy";
 import type { ComputerError } from "./service";
 
 const codeOf = async (p: Promise<unknown>) =>
@@ -87,5 +88,74 @@ describe("workspacePath", () => {
       expect(await codeOf(workspacePath(base, p, "read"))).toBe("INVALID");
     expect(await codeOf(workspacePath(base, "link/new.txt", "write"))).toBe("INVALID");
     expect(await codeOf(workspacePath(base, ".ssh/authorized_keys", "write"))).toBe("INVALID");
+  });
+});
+
+describe.skipIf(process.platform === "win32")("a transfer and a planted link", () => {
+  const setup = async () => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "zst-")));
+    const base = join(root, "code");
+    const outside = join(root, "outside");
+    await mkdir(base, { recursive: true });
+    await mkdir(outside);
+    await writeFile(join(outside, "secret.txt"), "not yours");
+    return { root, base, outside };
+  };
+  const done = { exitCode: 0 };
+
+  test("a link that points at nothing yet is not a place to write", async () => {
+    const { base, outside } = await setup();
+    await symlink(join(outside, "later"), join(base, "x"));
+    expect(await codeOf(workspacePath(base, "x", "write"))).toBe("INVALID");
+    await symlink(join(outside, "gone"), join(base, "d"));
+    expect(await codeOf(workspacePath(base, "d/file", "write"))).toBe("INVALID");
+  });
+
+  test("a download lands in the workspace, not through a link planted while it ran", async () => {
+    const { base, outside } = await setup();
+    const local = await workspacePath(base, "in/payload", "write");
+    await stagedTransfer(base, { type: "get", remote: "payload", local }, async (op) => {
+      // The program writes to a folder of the server's own.
+      expect(op.local.startsWith(base)).toBe(false);
+      await writeFile(op.local, "downloaded");
+      await symlink(join(outside, "planted"), local);
+      return done;
+    });
+    expect(await readFile(local, "utf8")).toBe("downloaded");
+    expect(existsSync(join(outside, "planted"))).toBe(false);
+  });
+
+  test("a failed download leaves nothing", async () => {
+    const { base } = await setup();
+    const local = await workspacePath(base, "payload", "write");
+    await stagedTransfer(base, { type: "get", remote: "payload", local }, async (op) => {
+      await writeFile(op.local, "half");
+      return { exitCode: 1 };
+    });
+    expect(existsSync(local)).toBe(false);
+  });
+
+  test("an upload sends the file that was checked, under its own name", async () => {
+    const { base, outside } = await setup();
+    await writeFile(join(base, "report.txt"), "report");
+    const local = await workspacePath(base, "report.txt", "read");
+    let sent = "";
+    await stagedTransfer(base, { type: "put", local, remote: "/tmp/" }, async (op) => {
+      expect(op.local.startsWith(base)).toBe(false);
+      expect(op.local.endsWith("report.txt")).toBe(true);
+      sent = await readFile(op.local, "utf8");
+      return done;
+    });
+    expect(sent).toBe("report");
+    await symlink(join(outside, "secret.txt"), join(base, "swapped"));
+    expect(
+      await codeOf(
+        stagedTransfer(
+          base,
+          { type: "put", local: join(base, "swapped"), remote: "x" },
+          async () => done,
+        ),
+      ),
+    ).toBe("NOT_FOUND");
   });
 });

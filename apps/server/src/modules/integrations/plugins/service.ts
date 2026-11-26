@@ -343,6 +343,8 @@ export function createPlugins(
           throw new PluginError("INVALID_FIELD", `${f.label} must be an http(s) address.`);
         }
       }
+      if (v && f.pattern && !new RegExp(`^(?:${f.pattern.source})$`).test(v))
+        throw new PluginError("INVALID_FIELD", `${f.label} ${f.pattern.format}`);
       if (v && f.kind === "select" && !f.options?.some((o) => o.value === v))
         throw new PluginError("INVALID_FIELD", `${f.label} has an unknown choice.`);
       if (v.length > 4000) throw new PluginError("INVALID_FIELD", `${f.label} is too long.`);

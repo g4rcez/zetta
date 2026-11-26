@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,6 +62,7 @@ function setup(o: { fetch?: (url: string) => Promise<Response>; platform?: NodeJ
               : null,
     binDir: () => join(dir, "bin"),
     outDir: (u) => join(dir, "code", u, "outputs", "youtube"),
+    stagingDir: () => join(dir, "staging"),
     fetch: o.fetch ?? (async () => new Response("nope", { status: 500 })),
     waitMs: 300,
     platform: o.platform ?? process.platform,
@@ -661,6 +663,29 @@ describe("long downloads run in the background", () => {
     });
   });
 
+  // Bots write in the person's files, so a link there must not decide where a download lands.
+  test.skipIf(process.platform === "win32")(
+    "a download is made apart and never written through a link in the files",
+    async () => {
+      const c = person();
+      const out = join(dir, "code", c.userId, "outputs", "youtube");
+      const outside = join(dir, "outside.mp4");
+      await mkdir(out, { recursive: true });
+      await symlink(outside, join(out, "Talk.mp4"));
+      answer = async (_cmd, o) => {
+        expect(o.cwd.startsWith(join(dir, "code"))).toBe(false);
+        await writeFile(join(o.cwd, "Talk.mp4"), "video");
+        return ok(join(o.cwd, "Talk.mp4"));
+      };
+      expect(await tool("download").handler(c, { url: VIDEO })).toMatchObject({
+        saved: "outputs/youtube/Talk.mp4",
+        bytes: 5,
+      });
+      expect(existsSync(outside)).toBe(false);
+      expect(await readFile(join(out, "Talk.mp4"), "utf8")).toBe("video");
+    },
+  );
+
   test("three at a time per person", async () => {
     ffmpeg = "/usr/bin/ffmpeg";
     const c = person();
@@ -677,7 +702,7 @@ describe("long downloads run in the background", () => {
     for (const job of ids) await tool("cancel").handler(c, { job });
     answer = () => ok("/x/outputs/youtube/a.mp4");
     await expect(tool("download").handler(c, { url: VIDEO })).resolves.toMatchObject({
-      saved: "/x/outputs/youtube/a.mp4",
+      saved: "outputs/youtube/a.mp4",
     });
   });
 });

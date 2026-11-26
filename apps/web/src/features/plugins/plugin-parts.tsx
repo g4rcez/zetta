@@ -38,12 +38,7 @@ export function useProbes() {
 }
 
 export function StatusBadge({ probe }: { probe?: Probe | undefined }) {
-  if (!probe)
-    return (
-      <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-        Not tested
-      </span>
-    );
+  if (!probe) return null;
   if (probe === "loading")
     return (
       <span role="status" className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -97,6 +92,7 @@ export function FieldInput({
         ]}
       />
     );
+  const secret = f.secret || f.kind === "password";
   return (
     <Input
       title={f.label}
@@ -104,8 +100,12 @@ export function FieldInput({
       required={required}
       placeholder={f.placeholder}
       info={f.help}
-      type={f.secret || f.kind === "password" ? "password" : f.kind === "url" ? "url" : "text"}
-      autoComplete="off"
+      type={secret ? "password" : f.kind === "url" ? "url" : "text"}
+      // These are keys of another service, never this person's sign-in: a browser or password manager must not fill them. Browsers ignore
+      // "off" next to a password field, so a secret asks for "new-password".
+      autoComplete={secret ? "new-password" : "off"}
+      data-1p-ignore=""
+      data-lpignore="true"
     />
   );
 }

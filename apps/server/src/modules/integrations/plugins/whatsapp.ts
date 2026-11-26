@@ -73,11 +73,14 @@ const normalizeBase = (text: string) => {
     throw new PluginError("BAD_URL", "The WAHA address is not a valid http(s) URL.");
   }
 };
+/** A server's address as one name: this computer's three names are one. */
+const serverOf = (base: string) =>
+  new URL(base).host.toLowerCase().replace(/^(localhost|127\.0\.0\.1|\[::1\])(?=:|$)/, "loopback");
+
 /** The address and key of the server this call goes to, resolved now. */
 async function target(c: PluginContext): Promise<{ base: string; apiKey: string }> {
   const typed = (c.config.baseUrl ?? "").trim();
   const personKey = (c.config.apiKey ?? "").trim();
-  if (typed) return { base: normalizeBase(typed), apiKey: personKey };
   let shared: Awaited<ReturnType<WahaInstallation>> = { url: "", key: undefined };
   if (policy.installation) {
     try {
@@ -89,9 +92,21 @@ async function target(c: PluginContext): Promise<{ base: string; apiKey: string 
       );
     }
   }
+  const sharedBase = shared.url.trim() || DEFAULT_WAHA_URL;
+  if (typed) {
+    shared.key?.fill(0);
+    const base = normalizeBase(typed);
+    // On the shared server a session is chosen by Zetta. A typed address would let the person name any session of it.
+    if (policy.installation && serverOf(base) === serverOf(normalizeBase(sharedBase)))
+      throw new PluginError(
+        "BAD_URL",
+        "That is the shared WhatsApp server. Leave the address empty to use it.",
+      );
+    return { base, apiKey: personKey };
+  }
   const apiKey = personKey || (shared.key ? shared.key.toString("utf8") : "");
   shared.key?.fill(0);
-  return { base: normalizeBase(shared.url.trim() || DEFAULT_WAHA_URL), apiKey };
+  return { base: normalizeBase(sharedBase), apiKey };
 }
 /** Asks the shared server for its list of sessions (documented: GET /api/sessions) with the saved address and key. For the Studio Test button. */
 export async function checkInstallationServer(): Promise<{ ok: boolean; message: string }> {
@@ -127,7 +142,7 @@ export async function checkInstallationServer(): Promise<{ ok: boolean; message:
       ok: true,
       message: apiKey
         ? "The server answers and accepts the saved key."
-        : "The server answers. No key is saved, so it must not ask for one.",
+        : "The server answers and asks for no key, so anyone who can reach it can use every member's number. Set a key on the server and save it here.",
     };
   } catch {
     return { ok: false, message: "The server could not be reached at the saved address." };
@@ -135,10 +150,16 @@ export async function checkInstallationServer(): Promise<{ ok: boolean; message:
 }
 // On the administrator's shared WAHA server every user gets a session named after their own user id, whatever the form says: a typed name
 // could otherwise point at another member's paired number (read their chats, send as them). On a server the user brought, the name is theirs.
-const sessionName = (c: PluginContext) =>
-  ownServer(c)
-    ? `u${createHash("sha256").update(c.userId).digest("hex").slice(0, 24)}`
-    : (c.config.session || "default").trim() || "default";
+// A typed address may still be the shared server under a name Zetta cannot match, so the shared server's names are never accepted.
+const sharedNameOf = (userId: string) =>
+  `u${createHash("sha256").update(userId).digest("hex").slice(0, 24)}`;
+const sessionName = (c: PluginContext) => {
+  if (ownServer(c)) return sharedNameOf(c.userId);
+  const typed = (c.config.session || "default").trim() || "default";
+  if (/^u[0-9a-f]{24}$/i.test(typed) && typed !== sharedNameOf(c.userId))
+    throw new PluginError("INVALID_FIELD", "That session name is reserved for the shared server.");
+  return typed;
+};
 const session = (c: PluginContext) => encodeURIComponent(sessionName(c));
 
 async function wahaRaw(

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import "../../phone/twilio-plugin";
 import { CATALOG, catalogStdio } from "./catalog";
 import { getPlugin, PluginError, registerPlugin, type PluginDef } from "./registry";
 import { actor, world } from "./test-world";
@@ -55,6 +56,22 @@ describe("plugin registry and catalog", () => {
 });
 
 describe("plugin service", () => {
+  test("a value of the wrong shape is refused on install and on a later save, and nothing changes", async () => {
+    const { plugins } = world();
+    const a = actor("u1");
+    const bad = { accountSid: "ana@example.invalid", authToken: "tok" };
+    await expect(plugins.install(a, "twilio", bad)).rejects.toMatchObject({
+      code: "INVALID_FIELD",
+      safe: expect.stringContaining("Account SID starts with AC"),
+    });
+    expect(await plugins.list(a)).toEqual([]);
+    await plugins.install(a, "twilio", { accountSid: `AC${"0".repeat(32)}`, authToken: "tok" });
+    await expect(plugins.configure(a, "twilio", bad)).rejects.toMatchObject({
+      code: "INVALID_FIELD",
+    });
+    expect(await plugins.configure(a, "twilio", {})).toMatchObject({ changed: false });
+  });
+
   test("install validates the schema, seals secrets and never exposes them", async () => {
     const { plugins, secrets } = world();
     const a = actor("u1");

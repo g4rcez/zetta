@@ -392,7 +392,7 @@ suite("MCP integrations and sources against compose postgres", () => {
     expect(r.json.assistant.content).toContain("The tool said echo:hi");
     expect(prompts.some((p) => p.includes("Tool results") && p.includes("echo:hi"))).toBe(true);
     expect(opened).toBe(closed); // every session was closed
-    // B chatting with A's (team) bot has no binding of their own -> cannot use A's server
+    // B chatting with A's (team) bot cannot use A's server, nor any server of their own through it
     const cb = (await call(B, "POST", "/api/conversations", { botId: bot })).json.conversation.id;
     scripted.push(
       '```zetta:mcp\n{"server":"files","tool":"echo","args":{"text":"x"}}\n```',
@@ -401,7 +401,7 @@ suite("MCP integrations and sources against compose postgres", () => {
     expect(
       (await call(B, "POST", `/api/conversations/${cb}/messages`, { content: "try" })).json
         .assistant.content,
-    ).toContain("didn't work");
+    ).toContain("not allowed for a bot someone else owns");
     // deleting the server removes bindings
     expect((await call(A, "DELETE", `/api/mcp/servers/${srv}`)).status).toBe(200);
     expect((await call(A, "GET", `/api/bots/${bot}/integrations`)).json.servers).toHaveLength(0);

@@ -109,7 +109,7 @@ function InstallForm({
             Runs on the Zetta server through a fixed, pre-approved command. You cannot change it.
           </p>
         )}
-        {!meta.verified && <Alert theme="warn">Not fully verified. {meta.notes}</Alert>}
+        {!meta.verified && <Alert theme="warn">{meta.notes}</Alert>}
         {meta.verified && meta.notes && (
           <p className="text-xs text-muted-foreground">{meta.notes}</p>
         )}
@@ -200,9 +200,9 @@ function SettingsForm({
     setLocal(undefined);
     setSaved(undefined);
     try {
-      await pluginsApi.configure(meta.id, config);
+      const { changed } = await pluginsApi.configure(meta.id, config);
       form.reset();
-      setSaved("Saved.");
+      setSaved(changed ? "Saved." : "Nothing changed. Fill in the field you want to replace.");
       onSaved();
     } catch (x) {
       setLocal(errorMessage(x));

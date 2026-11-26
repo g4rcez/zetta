@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readdir, rename, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, mkdir, mkdtemp, open, readdir, rename, rm, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
 
 import { uuidv7 } from "@zetta/core/uuid";
 import { dataDir } from "@zetta/core/zetta-home";
 
 import { codeDir } from "../../chat/harness";
 import { assertPublicUrl } from "../../computer/service";
+import { writeInside } from "../../fs-inside";
 import { formatProgress } from "./progress";
 import { PluginError, registerPlugin, type PluginContext, type PluginDef } from "./registry";
 import { optStr, str } from "./rest";
@@ -105,6 +106,8 @@ let download: Fetch = (url, init) => fetch(url, init);
 let which: (name: string) => string | null = (n) => Bun.which(n);
 let binDir = () => dataDir("bin");
 let outDir = (userId: string) => join(codeDir(userId), "outputs", "youtube");
+/** Where a download is made before it is copied to the person's files. */
+let stagingDir = () => dataDir("staging");
 let waitMs = 40_000;
 let platform: NodeJS.Platform = process.platform;
 /** Tests replace the process runner, the download, the PATH lookup, the folders and how long a call waits for a job. */
@@ -114,6 +117,7 @@ export const configureYtdlp = (o: {
   which?: (name: string) => string | null;
   binDir?: () => string;
   outDir?: (userId: string) => string;
+  stagingDir?: () => string;
   waitMs?: number;
   platform?: NodeJS.Platform;
 }) => {
@@ -122,6 +126,7 @@ export const configureYtdlp = (o: {
   if (o.which) which = o.which;
   if (o.binDir) binDir = o.binDir;
   if (o.outDir) outDir = o.outDir;
+  if (o.stagingDir) stagingDir = o.stagingDir;
   if (o.waitMs !== undefined) waitMs = o.waitMs;
   if (o.platform) platform = o.platform;
 };
@@ -620,6 +625,20 @@ const rel = (userId: string, abs: string) => {
   return abs.startsWith(base) ? abs.slice(base.length + 1) : abs;
 };
 
+/** Copies what a download left in its private folder into the person's files. A link there or in the files is never followed. */
+async function keep(userId: string, folder: string) {
+  const root = join(outDir(userId), "..", "..");
+  for (const entry of await readdir(folder, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const source = await open(join(folder, entry.name), "r");
+    try {
+      await writeInside(root, join(outDir(userId), entry.name), source);
+    } finally {
+      await source.close();
+    }
+  }
+}
+
 /** Starts a save in the background and waits a short while for it: a quick one answers at once, a long one hands back its job id. */
 async function startJob(
   c: PluginContext,
@@ -635,8 +654,6 @@ async function startJob(
       `${MAX_RUNNING} downloads are already running.`,
       "Wait for one to finish, or stop one with the cancel tool.",
     );
-  const dir = outDir(c.userId);
-  await mkdir(dir, { recursive: true, mode: 0o700 });
   let id = uuidv7().slice(-8);
   while (jobs.has(id)) id = uuidv7().slice(-8);
   const abort = new AbortController();
@@ -653,12 +670,16 @@ async function startJob(
   job.report = c.progress;
   tell(job, "Starting");
   job.done = (async () => {
+    // yt-dlp writes to a folder of the server's own: it follows links, and bots may plant them in the code folder.
+    let dir = "";
     try {
       // Audio cannot be made without ffmpeg: wait for the one being installed, or install it now.
       if (kind === "audio") await ffmpegDep.ensure();
       await settled(30 * 60_000, ffmpegDep.pending(), denoDep.pending());
       const ff = await findFfmpeg();
       let printed = "";
+      await mkdir(stagingDir(), { recursive: true, mode: 0o700 });
+      dir = await mkdtemp(join(stagingDir(), "download-"));
       const r = await runYtdlp(
         [
           ...COMMON,
@@ -700,8 +721,9 @@ async function startJob(
       }
       // A file over the size limit is skipped with a normal exit, so "no path printed" is the failure.
       if (r.code !== 0 || r.timedOut || !printed) throw failure(r, limits);
-      job.saved = rel(c.userId, printed);
-      job.bytes = await stat(printed).then(
+      await keep(c.userId, dir);
+      job.saved = rel(c.userId, join(outDir(c.userId), basename(printed)));
+      job.bytes = await stat(join(dir, basename(printed))).then(
         (s) => s.size,
         () => undefined,
       );
@@ -717,6 +739,7 @@ async function startJob(
             : { code: "DOWNLOAD_ERROR", safe: "yt-dlp could not finish that." };
       }
     } finally {
+      if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
       prune(c.userId);
     }
   })();

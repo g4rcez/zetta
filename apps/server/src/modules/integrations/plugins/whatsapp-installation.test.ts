@@ -36,7 +36,7 @@ beforeEach(() => {
 });
 
 describe("which WAHA server a call goes to", () => {
-  test("the person's own address and key win over the installation's, which is never even read", async () => {
+  test("the person's own address and key win over the installation's, whose key is never used", async () => {
     let reads = 0;
     configureWhatsapp({
       allowPrivate: true,
@@ -49,7 +49,32 @@ describe("which WAHA server a call goes to", () => {
       state: "connected",
     });
     expect(seen[0]!.key).toBe("mine");
-    expect(reads).toBe(0);
+    // Read once to compare the address; its key is cleared and not used.
+    expect(reads).toBeGreaterThan(0);
+  });
+
+  // A member's own settings must not reach the numbers other members paired on the shared server.
+  test("typing the shared server's address, under any of its names, is refused and nothing is asked of it", async () => {
+    configureWhatsapp({
+      allowPrivate: true,
+      installation: async () => ({ url: own, key: undefined }),
+    });
+    for (const baseUrl of [own, `${own}/`, `http://localhost:${server.port}`]) {
+      const status = await WHATSAPP.status!(ctx({ baseUrl, session: "default" }));
+      expect(status.state).toBe("error");
+      expect(status.detail).toContain("shared");
+    }
+    expect(seen).toEqual([]);
+  });
+
+  test("a session name of the shared server's kind cannot be used on a typed address", async () => {
+    const theirs = `u${"a".repeat(24)}`;
+    const status = await WHATSAPP.status!(
+      ctx({ baseUrl: "http://elsewhere.example.invalid", session: theirs }),
+    );
+    expect(status.state).toBe("error");
+    expect(status.detail).toContain("reserved");
+    expect(seen).toEqual([]);
   });
 
   test("the installation's key is never sent to a person's own server that has no key of its own", async () => {

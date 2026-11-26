@@ -2,7 +2,7 @@ import { registerPlugin, type PluginDef, type PluginField } from "./registry";
 
 /**
  * Catalog of installable MCP servers (data). Endpoints and commands were checked against each vendor's official documentation;
- * `verified: false` marks anything that could not be confirmed. Stdio entries are the ONLY local commands that may ever be started:
+ * `verified: false` shows the entry's note as a warning on the plugin's page. Stdio entries are the ONLY local commands that may ever be started:
  * `catalogStdio()` feeds the MCP allowlist, so the browser can pick an entry but never supply a command or arguments.
  */
 const token = (
@@ -53,7 +53,7 @@ export const CATALOG: PluginDef[] = [
     docsUrl: "https://mcp.sentry.dev/",
     verified: false,
     notes:
-      "The endpoint is official, but Sentry documents OAuth only; using a user auth token as a bearer token is unconfirmed.",
+      "Sentry documents OAuth for this endpoint. This connection sends a user auth token as a bearer token instead, and Sentry may refuse it.",
     fields: token(
       "Sentry user auth token",
       "Create a token at sentry.io/settings/account/api/auth-tokens with read scopes.",
@@ -99,7 +99,7 @@ export const CATALOG: PluginDef[] = [
       "https://developers.cloudflare.com/agents/model-context-protocol/mcp-servers-for-cloudflare/",
     verified: false,
     notes:
-      "Listed as OAuth in the docs; anonymous access is unconfirmed, so it may fail to connect.",
+      "Cloudflare lists this server as OAuth. This connection signs in with no account, and Cloudflare may refuse it.",
   }),
   remote({
     id: "github",
@@ -188,8 +188,7 @@ export const CATALOG: PluginDef[] = [
     args: ["-y", "chrome-devtools-mcp@1.12.0", "--headless"],
     docsUrl: "https://github.com/ChromeDevTools/chrome-devtools-mcp",
     verified: false,
-    notes:
-      "The command is official; the --headless flag is listed as a server parameter but its behaviour is unconfirmed.",
+    notes: "Runs Chrome headless on the server through npx; the first call downloads the package.",
   }),
 ];
 

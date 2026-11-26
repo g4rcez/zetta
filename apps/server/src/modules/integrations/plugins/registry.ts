@@ -42,6 +42,11 @@ export type PluginField = {
    * a setting that opens a risk by itself (an address Zetta calls, a switch that lets bots send). Default: only the user changes it.
    */
   botEditable?: boolean;
+  /**
+   * The shape a filled value must have, checked when it is saved: a regular expression for the whole value, and the same in words
+   * ("starts with AC and has 34 characters"), which follows the field's label in the error.
+   */
+  pattern?: { source: string; format: string };
   /** The allowed values of a "select" field. A blank value keeps the stored one, so the first option is not a default. */
   options?: { value: string; label: string }[];
 };

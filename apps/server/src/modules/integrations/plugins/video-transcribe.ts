@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat } from "node:fs/promises";
 import { isAbsolute, join, basename, sep } from "node:path";
 
 import { uuidv7 } from "@zetta/core/uuid";
 import { dataDir } from "@zetta/core/zetta-home";
 
+import { writeInside } from "../../fs-inside";
 import { codeDir } from "../../chat/harness";
 import { streamPcmWindows, type PcmProcess } from "../../transcribe/decode";
 import { TranscribeError, type Transcriber } from "../../transcribe/transcriber";
@@ -478,8 +479,6 @@ async function pipeline(job: Job, c: PluginContext, src: Source, force: boolean,
     tell(job);
     const title = info.title || (src.kind === "file" ? src.name : "transcript");
     const stem = `${safeName(title)} [${info.id ?? uuidv7().slice(-8)}]`;
-    const out = join(deps.codeRoot(c.userId), "outputs", "transcripts");
-    await mkdir(out, { recursive: true, mode: 0o700 });
     const rel = (ext: string) => join("outputs", "transcripts", `${stem}.${ext}`);
     const text = toText(cues, source === "captions" ? " " : "\n");
     for (const [ext, body] of [
@@ -487,7 +486,8 @@ async function pipeline(job: Job, c: PluginContext, src: Source, force: boolean,
       ["srt", toSrt(cues)],
       ["vtt", toVtt(cues)],
     ] as const)
-      await writeFile(join(deps.codeRoot(c.userId), rel(ext)), body, { mode: 0o600 });
+      // Bots write in the code folder: no link of theirs is followed.
+      await writeInside(deps.codeRoot(c.userId), rel(ext), body);
     job.fullText = text.slice(0, KEEP_TEXT);
     job.result = {
       source,

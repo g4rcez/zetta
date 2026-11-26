@@ -1,6 +1,7 @@
 // Who may log in to the machine, and how.
 import type { Environment } from "../environment";
-import { file, quote, step } from "../shell";
+import { APP_USER, PATHS } from "../layout";
+import { file, quote, step } from "../../core/shell";
 import { sshd, sudoers } from "../templates/host";
 
 const KEY =
@@ -13,7 +14,26 @@ export function publicKeyLine(text: string): string {
   return `${found[1]} ${found[2]} zetta-deploy`;
 }
 
-/** Runs first, as root: the admin user must exist and work before root login is closed. */
+/**
+ * Runs before anything is changed. The app step creates `${APP_USER}` as a service account and keeps an account that is already there,
+ * so a person's login of that name would become the user Zetta runs as: with a home the unit hides and with that person's files and
+ * shell next to the database.
+ */
+export const accountStep = () =>
+  step(
+    "accounts",
+    `The name "${APP_USER}" is free for the service account`,
+    `
+if id -u ${APP_USER} >/dev/null 2>&1; then
+  home=$(getent passwd ${APP_USER} | cut -d: -f6)
+  if [ "$home" != ${PATHS.home} ]; then
+    fail "a user named ${APP_USER} already exists, with the home $home. Zetta runs as a service account of that name, with the home ${PATHS.home} and no login. Move that account's work to another user, remove or rename it, then run bootstrap again."
+  fi
+fi
+`,
+  );
+
+/** Runs as root, after the account check: the admin user must exist and work before root login is closed. */
 export const adminUserStep = (environment: Environment, publicKey: string) => {
   const { user } = environment.ssh;
   const key = publicKeyLine(publicKey);

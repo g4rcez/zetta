@@ -3,18 +3,15 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs"
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import {
-  buildRelease,
-  hasUncommittedWork,
-  releaseName,
-  resolveCommit,
-  UPLOAD_FILTERS,
-} from "./build";
+import { buildRelease, hasUncommittedWork, releaseName, UPLOAD_FILTERS } from "../core/build";
+import { InfraError } from "../core/errors";
+import { describeSource, openSource, sourceSpec } from "../core/source";
+import type { Workspace } from "../core/workspace";
 import type { Agent, Environment } from "./environment";
 import { APP_USER, PATHS, SERVICE_PATH } from "./layout";
-import { quote, type Step } from "./shell";
-import type { Elevation, Remote } from "./ssh";
-import { adminUserStep, hostSteps, REBOOT_REQUIRED, sshdStep } from "./steps";
+import { quote, type Step } from "../core/shell";
+import type { Elevation, Remote } from "../core/ssh";
+import { accountStep, adminUserStep, hostSteps, REBOOT_REQUIRED, sshdStep } from "./steps";
 import {
   activateStep,
   backupStep,
@@ -29,7 +26,7 @@ import {
   statusStep,
 } from "./steps/release";
 import { harnessImage } from "./steps/runtime";
-import { repoRoot, type Versions } from "./versions";
+import type { Versions } from "../core/versions";
 
 export type Context = {
   environment: Environment;
@@ -38,9 +35,12 @@ export type Context = {
   connect: (user: string) => Remote;
   mode: "apply" | "dry-run";
   say: (line: string) => void;
+  /** How the person called this program, for the hints: `bun run infra` or `zetta infra`. */
+  program: string;
+  workspace: Workspace;
 };
 
-export class CommandError extends Error {}
+export class CommandError extends InfraError {}
 
 const admin = (context: Context) => context.connect(context.environment.ssh.user);
 
@@ -81,6 +81,7 @@ export async function bootstrap(context: Context) {
   const key = readPublicKey(context);
   // The first run happens as root, which sshd closes at the end of the access steps.
   const first = (await you.probe()) ? you : context.connect("root");
+  await perform(context, first, accountStep());
   await perform(context, first, adminUserStep(environment, key));
   if (!(await you.probe({ fresh: true })))
     throw new CommandError(
@@ -99,19 +100,27 @@ export async function bootstrap(context: Context) {
   }
   for (const step of hostSteps(environment, versions)) await perform(context, you, step);
   context.say(`\nThe server is ready. Next:
-  1. bun run infra secrets backup --env ${environment.name}   (store the connection key somewhere safe)
-  2. bun run infra deploy --env ${environment.name}
-  3. bun run infra login ${environment.agents[0] ?? "claude-code"} --env ${environment.name}`);
+  1. ${context.program} secrets backup --env ${environment.name}   (store the connection key somewhere safe)
+  2. ${context.program} deploy --env ${environment.name}
+  3. ${context.program} login ${environment.agents[0] ?? "claude-code"} --env ${environment.name}`);
 }
 
-export async function deploy(context: Context, ref = "HEAD") {
+/** `ref` and `repo` say which code is released; without them it is the clone's HEAD, or this binary's own version (core/source.ts). */
+export async function deploy(context: Context, options: { ref?: string; repo?: string } = {}) {
   const { environment } = context;
   const you = admin(context);
   await requireLogin(context, you);
   await perform(context, you, preflightStep());
 
-  const commit = await resolveCommit(repoRoot, ref);
-  if (ref === "HEAD" && (await hasUncommittedWork(repoRoot)))
+  const spec = sourceSpec(context.workspace, options);
+  // A dry run fetches nothing: a commit that is not on this computer is shown by its ref.
+  const source =
+    spec.from === "remote" && context.mode === "dry-run"
+      ? { root: "", commit: { id: placeholderCommit(spec.ref), date: "" }, remove: () => {} }
+      : await openSource(spec);
+  const { commit } = source;
+  if (spec.from === "remote") context.say(`\nThe code is ${describeSource(spec)}.`);
+  else if (spec.ref === "HEAD" && (await hasUncommittedWork(spec.root)))
     context.say("\nwarning: there is uncommitted work here. Only the commit is deployed.");
   const id = releaseName(new Date(), commit.id);
   const destination = `${PATHS.releases}/${id}.partial`;
@@ -123,10 +132,10 @@ export async function deploy(context: Context, ref = "HEAD") {
     await you.upload("<build folder>", destination, filters);
   } else {
     const built = await buildRelease({
-      root: repoRoot,
+      root: source.root,
       commit,
       serverUrl: `https://${environment.domain}`,
-    });
+    }).finally(source.remove);
     try {
       await perform(context, you, prepareStep(id), "self");
       context.say("\n== Upload");
@@ -142,16 +151,20 @@ export async function deploy(context: Context, ref = "HEAD") {
   if (context.mode === "apply") await checkPublicAddress(context);
 }
 
+const placeholderCommit = (ref: string) => (/^[0-9a-f]{7,40}$/.test(ref) ? ref : "0".repeat(12));
+
 /** The release is live when this runs: a failure here is DNS, the certificate or the firewall, which no rollback would fix. */
 async function checkPublicAddress(context: Context) {
   const address = `https://${context.environment.domain}/readyz`;
   try {
     const answer = await fetch(address, { signal: AbortSignal.timeout(15_000) });
     if (answer.ok) return context.say(`\nDeployed: https://${context.environment.domain}`);
-    context.say(`\nwarning: ${address} answered ${answer.status}. Check: bun run infra logs --all`);
+    context.say(
+      `\nwarning: ${address} answered ${answer.status}. Check: ${context.program} logs --all`,
+    );
   } catch (error) {
     context.say(
-      `\nwarning: ${address} could not be reached (${(error as Error).message}). Check the DNS record and: bun run infra logs --all`,
+      `\nwarning: ${address} could not be reached (${(error as Error).message}). Check the DNS record and: ${context.program} logs --all`,
     );
   }
 }
@@ -197,7 +210,7 @@ export function loginCommand(context: Context, agent: Agent, account?: string): 
   if (agent !== "claude-code") throw new CommandError("The bot run image holds Claude Code only.");
   if (!account || !/^[A-Za-z0-9_-]{1,100}$/.test(account))
     throw new CommandError(
-      "In the podman sandbox every person signs in apart: pass --account <their Zetta user id>.",
+      "In the podman sandbox every person signs in apart, in Studio > Accounts. To do it from here, pass --account <their Zetta user id>.",
     );
   const home = `${PATHS.harnessHomes}/${account}/${agent}`;
   const script = [

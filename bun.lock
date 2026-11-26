@@ -25,6 +25,9 @@
       "bin": {
         "zetta": "src/index.ts",
       },
+      "dependencies": {
+        "@zetta/infra": "workspace:*",
+      },
     },
     "apps/desktop": {
       "name": "desktop",

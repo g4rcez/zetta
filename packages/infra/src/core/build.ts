@@ -1,8 +1,8 @@
 // The local half of a deploy. The server has one core, so a release is built here: from a commit, in a clean folder, so work that is
 // not committed and local `.env` files never ship.
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 /** What the upload leaves out. Every workspace keeps its package.json, which the lockfile needs. The landing page is not deployed. */
 export const UPLOAD_FILTERS = [
@@ -14,7 +14,7 @@ export const UPLOAD_FILTERS = [
 
 export type Commit = { id: string; date: string };
 
-async function output(command: string[], cwd: string): Promise<string> {
+export async function output(command: string[], cwd: string): Promise<string> {
   const child = Bun.spawn(command, { cwd, stdin: "ignore", stdout: "pipe", stderr: "inherit" });
   const text = await new Response(child.stdout).text();
   if ((await child.exited) !== 0) throw new Error(`Failed: ${command.join(" ")}`);
@@ -52,10 +52,15 @@ export async function buildRelease(options: { root: string; commit: Commit; serv
   const folder = mkdtempSync(join(tmpdir(), "zetta-release-"));
   const source = join(folder, "source");
   const remove = () => rmSync(folder, { recursive: true, force: true });
+  // The build runs with the Bun that runs this program. Inside the compiled binary that is the binary itself, which acts as Bun when
+  // BUN_BE_BUN is set; the link gives the package scripts a `bun` to call, so no Bun has to be installed on this computer.
+  const tools = join(folder, "bin");
   const run = async (command: string[], cwd: string, extra: Record<string, string> = {}) => {
+    const env = buildEnvironment({ ...extra, BUN_BE_BUN: "1" });
+    env.PATH = [tools, env.PATH].filter(Boolean).join(delimiter);
     const child = Bun.spawn(command, {
       cwd,
-      env: buildEnvironment(extra),
+      env,
       stdin: "ignore",
       stdout: "inherit",
       stderr: "inherit",
@@ -63,6 +68,8 @@ export async function buildRelease(options: { root: string; commit: Commit; serv
     if ((await child.exited) !== 0) throw new Error(`Failed: ${command.join(" ")}`);
   };
   try {
+    mkdirSync(tools);
+    symlinkSync(process.execPath, join(tools, "bun"));
     const archive = join(folder, "source.tar");
     await run(["git", "archive", "--format=tar", "-o", archive, options.commit.id], options.root);
     await run(["mkdir", source], folder);

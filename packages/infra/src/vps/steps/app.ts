@@ -1,7 +1,7 @@
 // Zetta itself: its user, folders, settings, secrets, units and the web server in front of it.
 import type { Environment } from "../environment";
 import { APP_USER, PATHS } from "../layout";
-import { step, trackedFile } from "../shell";
+import { step, trackedFile } from "../../core/shell";
 import {
   appEnv,
   backupScript,

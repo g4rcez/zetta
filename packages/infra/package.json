@@ -2,6 +2,9 @@
   "name": "@zetta/infra",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "check-types": "tsc --noEmit",
     "dev": "alchemy dev",

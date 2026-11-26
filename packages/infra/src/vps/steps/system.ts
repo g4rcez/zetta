@@ -1,6 +1,6 @@
 // The operating system under Zetta: packages, swap, time, logs and the firewall.
 import type { Environment } from "../environment";
-import { step, trackedFile } from "../shell";
+import { step, trackedFile } from "../../core/shell";
 import { journald, nftables, SSH_PORTS, sshguard, sysctl } from "../templates/host";
 
 /** Exit status of the package step when the running kernel's modules are gone and the machine must restart. */

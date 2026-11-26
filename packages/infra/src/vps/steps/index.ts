@@ -1,13 +1,13 @@
-// The order of a bootstrap. The admin user and sshd come apart from the rest: the CLI proves the admin login between them.
+// The order of a bootstrap. The account check, the admin user and sshd come apart from the rest: the CLI proves the admin login between them.
 import type { Environment } from "../environment";
-import type { Step } from "../shell";
-import type { Versions } from "../versions";
+import type { Step } from "../../core/shell";
+import type { Versions } from "../../core/versions";
 import { appUserStep, caddyStep, servicesStep } from "./app";
 import { postgresStep } from "./database";
 import { agentsStep, bunStep, podmanStep } from "./runtime";
 import { firewallStep, hostStep, packagesStep } from "./system";
 
-export { adminUserStep, sshdStep } from "./access";
+export { accountStep, adminUserStep, sshdStep } from "./access";
 export { REBOOT_REQUIRED } from "./system";
 
 export function hostSteps(environment: Environment, versions: Versions): Step[] {

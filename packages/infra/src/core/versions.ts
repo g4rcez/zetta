@@ -1,9 +1,9 @@
 // The server runs the versions the repository already pins, read from where they are pinned, so there is one place to change each.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Agent } from "./environment";
 
-export const repoRoot = join(import.meta.dir, "../../..");
+export const AGENTS = ["claude-code", "codex"] as const;
+export type Agent = (typeof AGENTS)[number];
 
 export type Versions = {
   bun: string;
@@ -18,7 +18,7 @@ function pinned(text: string, pattern: RegExp, what: string): string {
   return found;
 }
 
-export function readVersions(root: string = repoRoot): Versions {
+export function readVersions(root: string): Versions {
   const read = (path: string) => readFileSync(join(root, path), "utf8");
   const server = read("apps/server/Dockerfile");
   const manifest = read("package.json");

@@ -1,7 +1,7 @@
 // Postgres on the same machine, reachable only through its Unix socket.
 import type { Environment } from "../environment";
 import { APP_USER, DATABASE, PATHS } from "../layout";
-import { file, step, trackedFile } from "../shell";
+import { file, step, trackedFile } from "../../core/shell";
 import { majorUpgradeCheck, majorUpgradeHook, pgHba, postgresConf } from "../templates/postgres";
 
 /** Migrations use `uuidv7()`, which Postgres has since version 18. */

@@ -7,6 +7,10 @@
   "type": "module",
   "scripts": {
     "check-types": "tsc --noEmit",
+    "compile": "bun scripts/compile.ts",
     "test": "bun test"
+  },
+  "dependencies": {
+    "@zetta/infra": "workspace:*"
   }
 }

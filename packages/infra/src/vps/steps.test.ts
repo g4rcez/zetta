@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { parseEnvSchema } from "../../../apps/server/src/env-schema";
-import production from "../environments/production";
+import { parseEnvSchema } from "../../../../apps/server/src/env-schema";
+import entry from "../../environments/production";
 import { type Environment, parseEnvironment } from "./environment";
-import { file, quote, script } from "./shell";
+import { file, quote, script } from "../core/shell";
 import { publicKeyLine } from "./steps/access";
 import { SECRET_NAMES } from "./steps/app";
 import {
@@ -21,16 +22,18 @@ import {
   rollbackStep,
   statusStep,
 } from "./steps/release";
-import { adminUserStep, hostSteps, sshdStep } from "./steps";
+import { accountStep, adminUserStep, hostSteps, sshdStep } from "./steps";
 import { appEnv, backupScript, caddyfile, restoreScript, serviceUnit } from "./templates/app";
 import { nftables, SSH_PORTS, sshd } from "./templates/host";
 import { majorUpgradeCheck, pgHba, postgresConf } from "./templates/postgres";
-import { readVersions, repoRoot } from "./versions";
+import { findWorkspace, resolveVersions } from "../core/workspace";
 
 const values = { DEPLOY_HOST: "203.0.113.7", DEPLOY_DOMAIN: "zetta.example.invalid" };
-const environment = parseEnvironment("production", production, values);
+const workspace = findWorkspace();
+const repoRoot = workspace.root!;
+const environment = parseEnvironment("production", entry.define, values);
 const podman: Environment = { ...environment, sandbox: "podman", agents: ["claude-code", "codex"] };
-const versions = readVersions();
+const versions = resolveVersions(workspace);
 const KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIexample me@example.invalid";
 const ID = "20261125T120000Z-0123456789ab";
 
@@ -41,6 +44,7 @@ function syntaxError(source: string) {
 }
 
 const allSteps = (on: Environment) => [
+  accountStep(),
   adminUserStep(on, KEY),
   sshdStep(),
   ...hostSteps(on, versions),
@@ -102,6 +106,29 @@ describe("remote scripts", () => {
       expect(() => migrateStep(bad)).toThrow();
       expect(() => rollbackStep(bad)).toThrow();
     }
+  });
+
+  test("the account check passes a free name and Zetta's own account, and refuses a person's login", () => {
+    const stubs = mkdtempSync(join(tmpdir(), "zetta-accounts-"));
+    // Stand-ins for the two programs the check asks: STUB_HOME is the home of the account, empty when there is none.
+    writeFileSync(join(stubs, "id"), '#!/bin/sh\n[ -n "$STUB_HOME" ]\n', { mode: 0o755 });
+    writeFileSync(
+      join(stubs, "getent"),
+      '#!/bin/sh\necho "zetta:x:1001:1001::$STUB_HOME:/bin/bash"\n',
+      { mode: 0o755 },
+    );
+    const check = (home: string) =>
+      Bun.spawnSync(["bash"], {
+        stdin: new TextEncoder().encode(accountStep().script),
+        env: { PATH: `${stubs}:/usr/bin:/bin`, STUB_HOME: home },
+      });
+    expect(check("").exitCode).toBe(0);
+    expect(check("/var/lib/zetta").exitCode).toBe(0);
+    // A person's login of that name: its home is wherever the system puts people.
+    const taken = check("/people/zetta");
+    expect(taken.exitCode).toBe(1);
+    expect(taken.stderr.toString()).toContain("already exists, with the home /people/zetta");
+    rmSync(stubs, { recursive: true, force: true });
   });
 
   test("packages come first, caddy and the units last", () => {

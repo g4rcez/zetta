@@ -3,8 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import production from "../environments/production";
-import { DRY_RUN_VALUES, loadDefinition, parseEnvironment, readValues } from "./environment";
+import entry from "../../environments/production";
+import { DRY_RUN_VALUES, parseEnvironment, readValues } from "./environment";
+
+const production = entry.define;
 
 const values = { DEPLOY_HOST: "203.0.113.7", DEPLOY_DOMAIN: "zetta.example.invalid" };
 const parse = (extra: Record<string, string> = {}) =>
@@ -22,6 +24,15 @@ describe("the production environment", () => {
     expect(() => parseEnvironment("production", production, {})).toThrow(
       /DEPLOY_HOST is missing[\s\S]*DEPLOY_DOMAIN is missing/,
     );
+  });
+
+  test("names the file the values go in, which is another one outside a clone", () => {
+    expect(() => parseEnvironment("production", production, {})).toThrow(
+      "packages/infra/.env.production",
+    );
+    expect(() =>
+      parseEnvironment("production", production, {}, "~/.config/zetta/infra/.env.production"),
+    ).toThrow("Set the values in ~/.config/zetta/infra/.env.production:");
   });
 
   test.each([
@@ -56,11 +67,5 @@ describe("values", () => {
       readValues("staging", { DEPLOY_HOST: "from-process", DEPLOY_SSH_KEY: "" }, folder),
     ).toEqual({ DEPLOY_HOST: "from-process", DEPLOY_DOMAIN: "file.example.invalid" });
     rmSync(folder, { recursive: true, force: true });
-  });
-
-  test("an environment name cannot leave the folder", async () => {
-    await expect(loadDefinition("../src/cli")).rejects.toThrow(/not an environment name/);
-    await expect(loadDefinition("nowhere")).rejects.toThrow(/no environment/);
-    expect(await loadDefinition("production")).toBe(production);
   });
 });

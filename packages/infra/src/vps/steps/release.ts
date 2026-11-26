@@ -1,6 +1,6 @@
 // The remote half of a deploy and the day-to-day commands.
 import { APP_PORT, APP_USER, DATABASE_URL, PATHS, RELEASE_ID } from "../layout";
-import { quote, step } from "../shell";
+import { quote, step } from "../../core/shell";
 
 function releaseId(id: string) {
   if (!RELEASE_ID.test(id)) throw new Error(`"${id}" is not a release id.`);

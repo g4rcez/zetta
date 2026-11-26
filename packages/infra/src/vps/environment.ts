@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { parseEnv } from "node:util";
 import { z } from "zod";
 
-export const infraRoot = join(import.meta.dir, "..");
+import { InfraError } from "../core/errors";
+import type { EnvironmentEntry } from "../core/kind";
+import { AGENTS } from "../core/versions";
+
+export { AGENTS, type Agent } from "../core/versions";
 
 /** The values an environment file may use. Declared in `packages/infra/.env.schema`. */
 export const VALUE_NAMES = [
@@ -18,9 +22,6 @@ export const VALUE_NAMES = [
 ] as const;
 export type ValueName = (typeof VALUE_NAMES)[number];
 export type DeployValues = Partial<Record<ValueName, string>>;
-
-export const AGENTS = ["claude-code", "codex"] as const;
-export type Agent = (typeof AGENTS)[number];
 
 /** `host`: bot runs are processes of the `zetta` user. `podman`: each run is a throwaway rootless container. */
 export const SANDBOXES = ["host", "podman"] as const;
@@ -78,14 +79,19 @@ const schema = z.strictObject({
 export type Environment = z.infer<typeof schema>;
 export type EnvironmentDefinition = (values: DeployValues) => Omit<z.input<typeof schema>, "name">;
 
-export const defineEnvironment = (define: EnvironmentDefinition) => define;
+/** What an environment file of this kind exports: `export default defineEnvironment((values) => ({ ... }))`. */
+export const defineEnvironment = (
+  define: EnvironmentDefinition,
+): EnvironmentEntry<"vps", EnvironmentDefinition> => ({ kind: "vps", define });
 
-export class EnvironmentError extends Error {}
+export class EnvironmentError extends InfraError {}
 
 export function parseEnvironment(
   name: string,
   define: EnvironmentDefinition,
   values: DeployValues,
+  /** The file the person edits, as the message names it. */
+  valuesFile = `packages/infra/.env.${name}`,
 ): Environment {
   const result = schema.safeParse({ ...define(values), name });
   if (result.success) return result.data;
@@ -93,15 +99,15 @@ export function parseEnvironment(
     (issue) => `  ${issue.path.join(".")}: ${issue.message}`,
   );
   throw new EnvironmentError(
-    `The environment "${name}" is not complete. Set the values in packages/infra/.env.${name}:\n${problems.join("\n")}`,
+    `The environment "${name}" is not complete. Set the values in ${valuesFile}:\n${problems.join("\n")}`,
   );
 }
 
-/** The deploy values: the file `.env.<name>`, with the process environment winning. Empty strings count as unset. */
+/** The deploy values: the file `.env.<name>` of `folder`, with the process environment winning. Empty strings count as unset. */
 export function readValues(
   name: string,
-  processValues: Record<string, string | undefined> = process.env,
-  folder: string = infraRoot,
+  processValues: Record<string, string | undefined>,
+  folder: string,
 ): DeployValues {
   const file = join(folder, `.env.${name}`);
   const fromFile = existsSync(file) ? parseEnv(readFileSync(file, "utf8")) : {};
@@ -118,14 +124,3 @@ export const DRY_RUN_VALUES: DeployValues = {
   DEPLOY_HOST: "vps.example.invalid",
   DEPLOY_DOMAIN: "zetta.example.invalid",
 };
-
-export async function loadDefinition(name: string): Promise<EnvironmentDefinition> {
-  if (!/^[a-z][a-z0-9-]{0,31}$/.test(name))
-    throw new EnvironmentError(`"${name}" is not an environment name.`);
-  const file = join(infraRoot, "environments", `${name}.ts`);
-  if (!existsSync(file))
-    throw new EnvironmentError(
-      `There is no environment "${name}": add packages/infra/environments/${name}.ts.`,
-    );
-  return ((await import(file)) as { default: EnvironmentDefinition }).default;
-}

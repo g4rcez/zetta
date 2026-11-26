@@ -1,5 +1,5 @@
 // The production server: 1 vCPU, 4 GB of RAM, Arch Linux. The values that name the machine come from `.env.production` (untracked).
-import { defineEnvironment } from "../src/environment";
+import { defineEnvironment } from "../src/vps/environment";
 
 export default defineEnvironment((values) => ({
   host: values.DEPLOY_HOST!,

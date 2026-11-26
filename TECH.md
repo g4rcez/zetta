@@ -115,6 +115,10 @@ cd packages/infra && bunx alchemy deploy --stage production
 Alchemy creates a stage-specific Axiom dataset and a least-privilege ingest token. `dev` injects the credentials into the observed apps without writing the token to an env file.  
 For a deployed Docker image, pass `AXIOM_API_KEY`, `AXIOM_DATASET`, and `AXIOM_EDGE_URL` through the target platform's secret manager. Local observed development runs through Alchemy with the credentials injected in memory.
 
+### A server of your own
+
+`bun run infra <command>` installs Zetta on one Arch Linux server over SSH and keeps it updated; the guide is [docs/operations/vps.md](docs/operations/vps.md). The code is in `packages/infra/src`, one folder per kind of infra (`vps`) beside a shared `core`. `bun run compile:cli` builds the `zetta` program (`apps/cli/dist`), which runs the same commands as `zetta infra <command>` with no clone of the repository.
+
 ### Docker Compose
 
 - Target: web + server + Postgres
@@ -151,7 +155,7 @@ zetta/
 │   ├── laya/        # The built-in decision model
 │   ├── render/      # Rendering of bot-made interface blocks
 │   ├── config/      # Shared TypeScript configuration
-│   └── infra/       # Alchemy deployment (observability)
+│   └── infra/       # Server install, one folder per kind of infra; Alchemy (observability)
 ├── docker/          # Images for bot runs, browsers, desktops and the scale example
 ├── docs/            # Wiki, operations and decisions
 └── scripts/         # Installer helpers, end-to-end checks and fixtures
@@ -177,6 +181,8 @@ zetta/
 - `bun run dev:desktop`: Start the Electrobun desktop app with HMR
 - `bun run build:desktop`: Build the stable Electrobun desktop app
 - `bun run build:desktop:canary`: Build the canary Electrobun desktop app
+- `bun run infra <command>`: Install Zetta on a server of your own and keep it updated (docs/operations/vps.md)
+- `bun run compile:cli`: Build the `zetta` program as one file
 - `bun run docker:build`: Build the Docker Compose images
 - `bun run docker:up`: Build and start the Docker Compose stack
 - `bun run docker:logs`: Tail logs from the Docker Compose stack

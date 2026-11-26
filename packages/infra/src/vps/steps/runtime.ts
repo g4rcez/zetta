@@ -2,8 +2,8 @@
 import { createHash } from "node:crypto";
 import type { Agent, Environment } from "../environment";
 import { APP_USER, PATHS, SERVICE_PATH } from "../layout";
-import { file, quote, step } from "../shell";
-import type { Versions } from "../versions";
+import { file, quote, step } from "../../core/shell";
+import type { Versions } from "../../core/versions";
 
 export const bunStep = (versions: Versions) =>
   step(

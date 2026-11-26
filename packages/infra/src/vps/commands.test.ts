@@ -1,21 +1,25 @@
 import { describe, expect, test } from "bun:test";
 
-import production from "../environments/production";
-import { buildEnvironment, releaseName } from "./build";
+import production from "../../environments/production";
+import { buildEnvironment, releaseName } from "../core/build";
 import * as commands from "./commands";
 import { parseEnvironment } from "./environment";
 import { RELEASE_ID } from "./layout";
-import { rsyncHost, sshOptions, type Remote } from "./ssh";
-import { readVersions } from "./versions";
+import { rsyncHost, sshOptions, type Remote } from "../core/ssh";
+import { findWorkspace, resolveVersions, type Workspace } from "../core/workspace";
 
-const environment = parseEnvironment("production", production, {
+const workspace = findWorkspace();
+const environment = parseEnvironment("production", production.define, {
   DEPLOY_HOST: "203.0.113.7",
   DEPLOY_DOMAIN: "zetta.example.invalid",
 });
 
 /** A server that records what it is asked. `probes` answers each login check in turn, then yes. */
-function fakeServer(options: { probes?: boolean[]; failing?: string; status?: number } = {}) {
+function fakeServer(
+  options: { probes?: boolean[]; failing?: string; status?: number; workspace?: Workspace } = {},
+) {
   const log: string[] = [];
+  const said: string[] = [];
   const probes = [...(options.probes ?? [])];
   const connect = (user: string): Remote => ({
     user,
@@ -42,26 +46,41 @@ function fakeServer(options: { probes?: boolean[]; failing?: string; status?: nu
   });
   const context: commands.Context = {
     environment,
-    versions: readVersions(),
+    versions: resolveVersions(workspace),
     connect,
     mode: "dry-run",
-    say: () => {},
+    say: (line) => void said.push(line),
+    program: "zetta infra",
+    workspace: options.workspace ?? workspace,
   };
-  return { log, context };
+  return { log, said, context };
 }
 
 describe("bootstrap", () => {
   test("uses root only until the admin login works, and closes root login after that", async () => {
     const { log, context } = fakeServer({ probes: [false] });
     await commands.bootstrap(context);
-    expect(log.slice(0, 5)).toEqual([
+    expect(log.slice(0, 6)).toEqual([
       "deploy:probe:false",
+      "root:accounts",
       "root:admin",
       "deploy:probe:true",
       "deploy:sshd",
       "deploy:probe:true",
     ]);
-    expect(log.filter((line) => line.startsWith("root:"))).toEqual(["root:admin"]);
+    expect(log.filter((line) => line.startsWith("root:"))).toEqual(["root:accounts", "root:admin"]);
+  });
+
+  test("changes nothing when the name of the service account is taken", async () => {
+    const { log, context } = fakeServer({ probes: [false], failing: "accounts" });
+    await expect(commands.bootstrap(context)).rejects.toThrow(/"accounts" failed/);
+    expect(log).toEqual(["deploy:probe:false", "root:accounts"]);
+  });
+
+  test("names the next commands the way this program was called", async () => {
+    const { said, context } = fakeServer();
+    await commands.bootstrap(context);
+    expect(said.at(-1)).toContain("2. zetta infra deploy --env production");
   });
 
   test("keeps root login open when the admin login does not work", async () => {
@@ -118,6 +137,26 @@ describe("deploy", () => {
     const { log, context } = fakeServer({ failing: "migrate" });
     await expect(commands.deploy(context)).rejects.toThrow("migrate");
     expect(log).not.toContain("deploy:activate");
+  });
+
+  test("with no clone, a dry run names the public repository and fetches nothing", async () => {
+    const { log, said, context } = fakeServer({
+      workspace: { mode: "standalone", values: "/nowhere", valuesLabel: "~/.config/zetta/infra" },
+    });
+    await commands.deploy(context, { ref: "0123456789abcdef" });
+    expect(said.join("\n")).toContain(
+      "The code is 0123456789abcdef of https://github.com/g4rcez/zetta.git.",
+    );
+    expect(said.join("\n")).toContain("would build commit 0123456789abcdef");
+    expect(log).toContain("deploy:activate");
+  });
+
+  test("a source that is neither a folder nor an address is refused before anything is built", async () => {
+    const { log, context } = fakeServer();
+    await expect(commands.deploy(context, { repo: "--upload-pack=id" })).rejects.toThrow(
+      /not a folder here or the address/,
+    );
+    expect(log).not.toContain("deploy:prepare");
   });
 
   test("migrate runs only the migration step, which takes its own backup", async () => {

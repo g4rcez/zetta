@@ -135,9 +135,18 @@ export function PlaygroundPage({
     (r) =>
       r === draft.runner ||
       r === "browser" ||
-      (r === "host" && info?.hostVersion) ||
+      (r === "host" && info?.hostVersion && info.host !== false) ||
       (r === "container" && info?.container),
   );
+  /** Why the server runner chosen for this playground cannot run it here, if it cannot. */
+  const hostNote =
+    draft.runner !== "host" || !info
+      ? undefined
+      : info.host === false
+        ? "Running code on the server itself is turned off on this installation. Choose another runner, or ask the administrator."
+        : info.hostVersion
+          ? undefined
+          : `${info.label} is not installed on the server host. Choose another runner.`;
   const running = runQuery.data?.status === "running";
   const browser = draft.runner === "browser";
   const panel: Panel = search.panel ?? "output";
@@ -385,7 +394,7 @@ export function PlaygroundPage({
           </Alert>
         </div>
       )}
-      {(error || changedElsewhere || (draft.runner === "host" && info && !info.hostVersion)) && (
+      {(error || changedElsewhere || hostNote) && (
         <div className="space-y-2 border-b px-3 py-2">
           {error && <Alert theme="danger">{error}</Alert>}
           {changedElsewhere && (
@@ -397,11 +406,7 @@ export function PlaygroundPage({
               </Tool>
             </Alert>
           )}
-          {draft.runner === "host" && info && !info.hostVersion && (
-            <Alert theme="warn">
-              {info.label} is not installed on the server host. Choose another runner.
-            </Alert>
-          )}
+          {hostNote && <Alert theme="warn">{hostNote}</Alert>}
         </div>
       )}
       <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-cols-2 lg:grid-rows-1">

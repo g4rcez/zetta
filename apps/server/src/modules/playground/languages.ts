@@ -13,6 +13,8 @@ export const PLAYGROUND_LIMITS = {
   keepRuns: 20,
   timeoutMs: 30_000,
   maxTimeoutMs: 120_000,
+  /** A browser build (bundling only; nothing runs). */
+  buildMs: 30_000,
 } as const;
 
 export type Cli = {

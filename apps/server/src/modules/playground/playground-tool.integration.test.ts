@@ -228,6 +228,34 @@ suite("playground tool for bots", () => {
     expect(after.some((p) => p.title === "Held")).toBe(true);
   });
 
+  // With bots in containers, a script on the server itself would leave the bot's container.
+  test("with bots in Docker, a bot's run on the server waits for a card, and Approve runs it", async () => {
+    const { bot, c } = await setup("Boxed", true);
+    const made = await playground.create(await actor(), {
+      title: "Host",
+      language: "bash",
+      runner: "host",
+      files: [{ path: "main.sh", content: "echo from the host\n" }],
+    });
+    const before = process.env.ZETTA_HARNESS_RUNTIME;
+    process.env.ZETTA_HARNESS_RUNTIME = "docker";
+    try {
+      script = [block({ action: "run", id: made.id }), "Waiting."];
+      await turn(c, "Run it");
+      expect(await playground.runs(await actor(), made.id)).toEqual([]);
+      const cards = await db.$client.query(
+        "select id, kind, status from config_proposal where proposed_by_bot_id = $1",
+        [bot.id],
+      );
+      expect(cards.rows.map((r) => [r.kind, r.status])).toEqual([["bot_action", "pending"]]);
+      await call("POST", `/api/proposals/${cards.rows[0].id}/decision`, { approve: true });
+      expect((await playground.runs(await actor(), made.id)).length).toBe(1);
+    } finally {
+      if (before === undefined) delete process.env.ZETTA_HARNESS_RUNTIME;
+      else process.env.ZETTA_HARNESS_RUNTIME = before;
+    }
+  });
+
   test("a bot reads a playground and its last run", async () => {
     const { c } = await setup("Reader2", true);
     const made = await playground.create(await actor(), {

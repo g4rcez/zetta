@@ -261,11 +261,18 @@ export function createPlayground(db: Database, deps: PlaygroundDeps = {}) {
     return { ...row, mine: row.ownerUserId === actor.userId, files: await filesOf(id) };
   }
 
+  /** The runner of a new playground that names none: the first this server runs for the language (the host one when nothing else can). */
+  const defaultRunner = (language: PlaygroundFields["language"]) => {
+    const can = LANGUAGES[language].runners;
+    if (can.includes("host") && hostCode()) return "host" as const;
+    if (can.includes("container") && runners.container) return "container" as const;
+    return can.includes("browser") ? ("browser" as const) : ("host" as const);
+  };
+
   async function create(actor: ActiveActor, input: PlaygroundFields, origin: Origin = {}) {
     const f = {
       ...input,
-      runner:
-        input.runner ?? (LANGUAGES[input.language].runners.includes("host") ? "host" : "browser"),
+      runner: input.runner ?? defaultRunner(input.language),
       entry:
         input.entry ??
         (input.files.some((x) => x.path === LANGUAGES[input.language].defaultEntry)
@@ -316,6 +323,8 @@ export function createPlayground(db: Database, deps: PlaygroundDeps = {}) {
           defaultEntry: LANGUAGES[id].defaultEntry,
           runners: LANGUAGES[id].runners,
           hostVersion: await hostVersion(id),
+          /** False: this installation does not let scripts run on the server itself. */
+          host: LANGUAGES[id].runners.includes("host") && hostCode(),
           container: Boolean(runners.container) && LANGUAGES[id].runners.includes("container"),
         })),
       );

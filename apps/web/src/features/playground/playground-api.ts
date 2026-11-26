@@ -61,6 +61,8 @@ export type LanguageInfo = {
   runners: PlaygroundRunner[];
   /** The version line of the CLI on the server host, or null when it is not installed. */
   hostVersion: string | null;
+  /** False: this installation does not let scripts run on the server itself. */
+  host?: boolean;
   /** The server has a container engine and this language can use it. */
   container: boolean;
 };

@@ -171,7 +171,8 @@ export function createContainerRunner(c: ContainerConfig) {
         `kill -KILL -- -$(cat ${inside}/.pid) 2>/dev/null; true`,
       ]).catch(() => {});
     try {
-      await writeFolder(dir, spec);
+      // The runs folder is mounted: another script may write in it at the same time, so every path is anchored there.
+      await writeFolder(dir, spec, c.runsDir);
       const seconds = Math.ceil(spec.timeoutMs / 1000);
       const proc = Bun.spawn(
         [
@@ -231,8 +232,8 @@ export function createContainerRunner(c: ContainerConfig) {
         clearTimeout(timer);
         signal.removeEventListener("abort", onAbort);
       }
-      const kept = await collectOutputs(join(dir, "out"));
-      const result = await readResult(dir, spec);
+      const kept = await collectOutputs(c.runsDir, join(basename(dir), "out"));
+      const result = await readResult(c.runsDir, basename(dir), spec);
       const code = proc.exitCode;
       // With `-s KILL`, `timeout` answers 137 (the kill signal) when it ended the script; without it, 124. A script that exits with
       // one of these by itself, before the limit, is a plain failure.
@@ -250,6 +251,8 @@ export function createContainerRunner(c: ContainerConfig) {
         ...(result !== undefined && { result }),
       };
     } finally {
+      // Emptied from inside first: there a link planted while it is removed can only reach the container's own files.
+      await engine(["exec", name, "rm", "-rf", "--", inside]).catch(() => {});
       // A folder the container user cannot hand back stays until the next boot sweep.
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }

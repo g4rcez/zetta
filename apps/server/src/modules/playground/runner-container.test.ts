@@ -112,6 +112,15 @@ real("playground container runner", () => {
     expect(big.result).toBeUndefined();
   });
 
+  // `/etc` is a folder of the server too: the link resolves there when the server reads what the script left.
+  test("a link in place of out/, or inside it, brings no file of the server back", async () => {
+    for (const script of ["rm -rf out\nln -s /etc out\n", "ln -s /etc out/etc\n"]) {
+      const result = await runner.run(bash(script), never);
+      expect(result).toMatchObject({ status: "ok", outputs: [] });
+    }
+    expect(await readdir(config.runsDir)).toEqual([]);
+  });
+
   test("a failing script reports its exit code", async () => {
     const result = await runner.run(bash("echo oops >&2\nexit 7\n"), never);
     expect(result).toMatchObject({ status: "failed", exitCode: 7, stderr: "oops\n" });

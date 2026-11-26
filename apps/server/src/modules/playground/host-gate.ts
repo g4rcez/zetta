@@ -1,9 +1,9 @@
 import type { Runner } from "./types";
 
 /**
- * The host runner starts a script as the server's own OS user, exactly like a bot's Bash. The setting `codeAccess` being off, or an install
- * open to the network where bots do not run in Docker (settings/code-access.ts), turns that off for bots, and so for people too. The
- * gate is `hostCode` of `pickRunner`, built in services.ts from that policy.
+ * The host runner starts a script as the server's own OS user, in no container. Code access being off turns it off, and once Zetta is
+ * open to the network it also needs the setting `hostRunner` saved on (settings/code-access.ts). The gate is `hostCode` of
+ * `pickRunner`, built in services.ts from that policy.
  */
 
 export type Picked = { runner: Runner } | { refused: "host_off" | "not_set_up" };

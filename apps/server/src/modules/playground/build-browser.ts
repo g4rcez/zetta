@@ -2,12 +2,14 @@ import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import type { PlaygroundFileSnapshot, PlaygroundLanguage } from "@zetta/db/schema/playground";
+import { PLAYGROUND_LIMITS } from "./languages";
 import { writeFolder } from "./run-folder";
 import { PlaygroundError } from "./types";
 
 const MAX_PAGE_BYTES = 5_000_000;
 const SCRIPT = /\.(?:[cm]?[jt]s|[jt]sx)$/;
-// A macro runs its code on the server while it bundles. Refuse it: a browser playground runs in the page, never on the server.
+// Some bundlers run a "macro" import on the server while they bundle. This one has no macros, so such an import is only code of the
+// page; the check stays to say so in plain words. Nothing here depends on it to keep code off the server.
 const MACRO = /\btype\s*:\s*["']macro["']/;
 
 /** Runs in the page first: the inputs, and a copy of every console line and error to the parent window (the Output panel). */
@@ -33,53 +35,99 @@ const prelude = (inputs: Record<string, unknown>) => {
 })();</script>`;
 };
 
-/** Bundles one file of the playground for the browser. Imports stay inside the playground folder; a URL import stays a URL. */
+/** A path or id without the `?query` or `#hash` a bundler may carry on it. */
+const bare = (path: string) => path.replace(/[?#].*$/s, "");
+
+/** The first message of a failed build, with no colour codes. */
+const messageOf = (e: unknown) =>
+  Bun.stripANSI(
+    (e as { errors?: { message?: string }[] } | undefined)?.errors?.[0]?.message ??
+      (e as Error | undefined)?.message ??
+      "",
+  );
+
+/**
+ * Bundles one file of the playground for the browser. Imports stay inside the playground folder; a URL import stays a URL.
+ * The bundler only reads and rewrites the source: nothing of the playground runs on the server. It must stay that way, so no
+ * option here may come from the playground.
+ */
 async function bundle(dir: string, abs: string, format: "esm" | "iife") {
-  const result = await Bun.build({
-    entrypoints: [abs],
-    target: "browser",
-    format,
-    plugins: [
-      {
-        name: "confine",
-        setup(build) {
-          build.onResolve({ filter: /.*/ }, (args) => {
+  const inside = (path: string) => path === dir || path.startsWith(dir + sep);
+  let refused: string | undefined;
+  const refuse = (message: string): never => {
+    refused ??= message;
+    throw new Error(message);
+  };
+  const leaves = (what: string) => `The import ${what} leaves the playground.`;
+  try {
+    // Loaded on the first build, so an install without the bundler's native part still starts and only browser builds fail.
+    const { rolldown } = await import("rolldown");
+    const build = await rolldown({
+      input: abs,
+      cwd: dir,
+      platform: "browser",
+      tsconfig: false,
+      logLevel: "silent",
+      // A stylesheet a script imports is left out; the page names its stylesheets with <link>.
+      moduleTypes: { ".css": "empty", ".txt": "text", ".md": "text" },
+      plugins: [
+        {
+          name: "confine",
+          resolveId(source: string, importer: string | undefined) {
             // The page may load a library from a public CDN; the page's CSP lists which ones.
-            if (/^https?:\/\//.test(args.path)) return { path: args.path, external: true };
-            if (args.path.startsWith(".") || isAbsolute(args.path)) {
-              const target = args.importer
-                ? resolve(dirname(args.importer), args.path)
-                : resolve(args.path);
-              if (target !== dir && !target.startsWith(dir + sep))
-                throw new Error(`The import ${args.path} leaves the playground.`);
-              return undefined;
+            if (/^https?:\/\//.test(source)) return { id: source, external: true };
+            const path = bare(source);
+            if (path.startsWith(".") || isAbsolute(path)) {
+              const target = importer ? resolve(dirname(importer), path) : resolve(path);
+              if (!inside(target)) refuse(leaves(source));
+              return null;
             }
-            throw new Error(
-              `The import ${args.path} is not a file of the playground. Import a library from a URL, for example https://cdn.jsdelivr.net/npm/...`,
+            return refuse(
+              `The import ${source} is not a file of the playground. Import a library from a URL, for example https://cdn.jsdelivr.net/npm/...`,
             );
-          });
+          },
+          // The second guard: whatever a path resolved to (a folder's package.json may name any file), only files of the build are
+          // read. An id that starts with NUL is the bundler's own runtime, which no import of a playground can name.
+          load(id: string) {
+            if (!id.startsWith("\0") && !inside(bare(id))) refuse(leaves("of a file"));
+            return null;
+          },
         },
-      },
-    ],
-  }).catch((e: unknown) => {
-    // A failed build throws; a plugin's own error arrives as the text of the first message. The temp folder is not shown.
-    const first =
-      (e as { errors?: { message?: string }[] } | undefined)?.errors?.[0]?.message ??
-      (e as Error | undefined)?.message;
+      ],
+    });
+    try {
+      const { output } = await build.generate({ format, codeSplitting: false });
+      // `</script` in the code would end the tag it is inlined in.
+      return output[0].code.replaceAll("</script", "<\\/script");
+    } finally {
+      await build.close();
+    }
+  } catch (e) {
+    // A plugin's refusal arrives wrapped in the bundler's own text, so the plain one is kept. The temp folder is not shown.
+    const first = refused ?? messageOf(e);
     throw new PlaygroundError(
       "INVALID",
       first ? first.replaceAll(dir + sep, "").slice(0, 300) : "The files could not be built.",
     );
+  }
+}
+
+const tooLong = () => new PlaygroundError("INVALID", "The build took too long and was stopped.");
+
+/** What `work` makes, or a refusal when it takes longer than `ms`. The bundler cannot be interrupted: its late result is dropped. */
+async function within<T>(work: () => Promise<T>, ms: number) {
+  if (ms <= 0) throw tooLong();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(tooLong()), ms);
   });
-  if (!result.success)
-    throw new PlaygroundError(
-      "INVALID",
-      result.logs.find((l) => l.level === "error")?.message ?? "The files could not be built.",
-    );
-  const main = result.outputs.find((o) => o.kind === "entry-point") ?? result.outputs[0];
-  if (!main) throw new PlaygroundError("INVALID", "The build made no output.");
-  // `</script` in the code would end the tag it is inlined in.
-  return (await main.text()).replaceAll("</script", "<\\/script");
+  const running = work();
+  running.catch(() => {});
+  try {
+    return await Promise.race([running, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -94,7 +142,12 @@ export async function buildBrowser(input: {
   inputs: Record<string, unknown>;
   /** Markup that goes first in the page's head, before everything else (an app's page puts its policy and its bridge here). */
   head?: string;
+  /** How long the whole build may take. */
+  timeoutMs?: number;
 }): Promise<{ html: string }> {
+  const deadline = Date.now() + (input.timeoutMs ?? PLAYGROUND_LIMITS.buildMs);
+  const bundled = (dir: string, abs: string, format: "esm" | "iife") =>
+    within(() => bundle(dir, abs, format), deadline - Date.now());
   for (const f of input.files)
     if (SCRIPT.test(f.path) && MACRO.test(f.content))
       throw new PlaygroundError(
@@ -125,7 +178,7 @@ export async function buildBrowser(input: {
             `The script ${m[3]} is not a file of the playground.`,
           );
         const attrs = `${m[1]}${m[4]}`.trim();
-        const code = await bundle(
+        const code = await bundled(
           dir,
           abs(path),
           /\btype\s*=\s*["']module["']/i.test(attrs) ? "esm" : "iife",
@@ -146,7 +199,7 @@ export async function buildBrowser(input: {
         page = page.replace(m[0], () => `<style>${css}</style>`);
       }
     } else {
-      const code = await bundle(dir, abs(input.entry), "esm");
+      const code = await bundled(dir, abs(input.entry), "esm");
       page = `<!doctype html><html><head><meta charset="utf-8"></head><body><div id="app"></div><script type="module">${code}</script></body></html>`;
     }
     // First thing in the document, so it is in place before any script of the page runs.

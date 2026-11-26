@@ -61,8 +61,8 @@ export const hostRunner: Runner = async (spec, signal) => {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
     }
-    const kept = await collectOutputs(join(dir, "out"));
-    const result = await readResult(dir, spec);
+    const kept = await collectOutputs(dir, "out");
+    const result = await readResult(dir, "", spec);
     const code = proc.exitCode;
     return {
       status: reason ?? (code === 0 ? "ok" : "failed"),

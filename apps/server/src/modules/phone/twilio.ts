@@ -21,7 +21,7 @@
  * answer per call: `answer` / `reject` fill it, and `reply` hands it to the webhook route, which is still waiting. Nothing a provider
  * says is echoed: every failure is a fixed sentence.
  */
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
   PhoneProviderError,
   WebhookError,
@@ -159,8 +159,20 @@ export function createTwilioProvider(o: TwilioOptions): PhoneProvider {
       );
     }
     if (okStatuses.includes(res.status)) return {};
-    if (res.status === 401 || res.status === 403)
-      throw new PhoneProviderError("AUTH", "The phone provider did not accept the saved key.");
+    if (res.status === 401 || res.status === 403) {
+      // Only Twilio's error number is kept (20003 wrong credentials, 20008 test credentials), never its words.
+      const number = await res.json().then(
+        (body) => {
+          const code = (body as { code?: unknown } | null)?.code;
+          return Number.isInteger(code) ? Number(code) : undefined;
+        },
+        () => undefined,
+      );
+      throw new PhoneProviderError("AUTH", "The phone provider did not accept the saved key.", {
+        status: res.status,
+        ...(number === undefined ? {} : { code: number }),
+      });
+    }
     if (res.status === 404)
       throw new PhoneProviderError("NOT_FOUND", "The provider does not know that.");
     if (res.status === 429 || res.status >= 500)
@@ -251,6 +263,10 @@ export function createTwilioProvider(o: TwilioOptions): PhoneProvider {
 
   return {
     name: "twilio",
+    // The token too: anyone can type another account's SID next to a token of their own, and sign with that token.
+    account: createHash("sha256")
+      .update(`${o.accountSid.toLowerCase()}\0${o.authToken}`)
+      .digest("hex"),
     caps: {
       dtmf: "stream",
       answered: "stream",
@@ -479,16 +495,25 @@ export function createTwilioProvider(o: TwilioOptions): PhoneProvider {
     },
 
     async checkAccount(): Promise<AccountCheck> {
-      let balance: string | undefined;
+      // The credentials are checked against the account itself, which every live credential of it can read, a subaccount's too.
+      let state: string;
       try {
-        const out = await call("GET", "/Balance.json");
-        const amount = str(out.balance);
-        balance = amount ? `${amount} ${str(out.currency)}`.trim() : undefined;
+        state = str((await call("GET", ".json")).status);
       } catch (e) {
         if (e instanceof PhoneProviderError && e.code === "AUTH")
-          return { keyOk: false, applicationOk: false };
+          return { keyOk: false, applicationOk: false, refusal: e.reply };
         throw e;
       }
+      if (state === "suspended" || state === "closed")
+        return { keyOk: false, applicationOk: false, accountState: state };
+      // The balance is only shown: an account that may not read it still places and answers calls.
+      const balance = await call("GET", "/Balance.json").then(
+        (out) => {
+          const amount = str(out.balance);
+          return amount ? `${amount} ${str(out.currency)}`.trim() : undefined;
+        },
+        () => undefined,
+      );
       // There is no call application to look up: what has to work is the number resource, where each webhook address is set.
       try {
         await call("GET", `/IncomingPhoneNumbers.json?${q({ PageSize: "1" })}`);

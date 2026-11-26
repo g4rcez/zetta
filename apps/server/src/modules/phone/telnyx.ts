@@ -14,7 +14,7 @@
  *   webhooks   headers `telnyx-signature-ed25519` (base64) and `telnyx-timestamp` (unix seconds); Ed25519 over `<timestamp>|<raw body>`
  *              with the account's public key (base64, 32 raw bytes).
  */
-import { createPublicKey, verify } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import {
   PhoneProviderError,
   WebhookError,
@@ -191,6 +191,10 @@ export function createTelnyxProvider(o: TelnyxOptions): PhoneProvider {
 
   return {
     name: "telnyx",
+    // Events are checked against the public key, so the key is the account. One that cannot be read verifies nothing.
+    account: createHash("sha256")
+      .update(key ? key.export({ format: "der", type: "spki" }) : `unreadable:${o.publicKey}`)
+      .digest("hex"),
     caps: {
       dtmf: "webhook",
       answered: "webhook",

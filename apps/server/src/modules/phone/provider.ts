@@ -19,6 +19,8 @@ export class PhoneProviderError extends Error {
     readonly code: PhoneErrorCode,
     /** A sentence for the person; never the provider's words. */
     readonly safe: string,
+    /** What the provider answered, as numbers only: the HTTP status and, when it gave one, its own error number. */
+    readonly reply?: { status: number; code?: number },
   ) {
     super(code);
     this.name = "PhoneProviderError";
@@ -139,10 +141,19 @@ export type AccountCheck = {
   applicationOk: boolean;
   /** What the provider says the account holds, as text ("12.50 USD"), when it says. */
   balance?: string;
+  /** Why the key was not accepted, when the provider answered (numbers only). */
+  refusal?: { status: number; code?: number };
+  /** The provider accepts the key but says the account cannot be used. */
+  accountState?: "suspended" | "closed";
 };
 
 export type PhoneProvider = {
   readonly name: PhoneProviderId;
+  /**
+   * Which account this instance is: a digest of what its webhook check relies on. Two instances with the same value accept the same
+   * signatures. A good signature only says which account sent an event, so a handler compares this with the account of the number.
+   */
+  readonly account: string;
   readonly caps: ProviderCaps;
   searchNumbers(q: {
     country: string;

@@ -231,6 +231,8 @@ export function startFakeTwilio(
         state.updates.push({ sid: callUpdate[1]!, form });
         return json({ sid: callUpdate[1], status: form.Status?.[0] ?? "in-progress" });
       }
+      if (rest === ".json" && req.method === "GET")
+        return json({ sid: accountSid, status: "active" });
       if (rest === "/Balance.json" && req.method === "GET")
         return json({ account_sid: accountSid, balance: "10.0000", currency: "USD" });
       return json({ code: 20404, message: "Not found" }, 404);

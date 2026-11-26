@@ -22,7 +22,7 @@ Object.assign(globalThis, {
     removeItem: (k: string) => void store.delete(k),
   },
 });
-const { ListenButton } = await import("./listen-button");
+const { ListenMenuRow } = await import("./listen-button");
 const { listenDeps, stopListening, getListenState, toggleListen, getBotVoice, setBotVoice } =
   await import("./speech-player");
 const { queryClient } = await import("@/lib/query-client");
@@ -91,7 +91,12 @@ async function mount(props: { id?: string; text?: string; botId?: string } = {})
       createElement(
         QueryClientProvider,
         { client: queryClient },
-        createElement(ListenButton, { id: "m1", text: "Hello there.", ...props }),
+        createElement(ListenMenuRow, {
+          id: "m1",
+          text: "Hello there.",
+          onDone: () => {},
+          ...props,
+        }),
       ),
     ),
   );
@@ -105,7 +110,7 @@ const press = async (b: HTMLButtonElement) => {
   });
 };
 
-describe("the Listen button of a bot message", () => {
+describe("Listen in the menu of a bot message", () => {
   test("it is not there when text to speech is off, or while the setting is not known", async () => {
     setProvider("off");
     expect(btn(await mount())).toBeNull();
@@ -113,11 +118,11 @@ describe("the Listen button of a bot message", () => {
     expect(btn(await mount())).toBeNull();
   });
 
-  test("it has a name and no visible text, and it is not there for empty text", async () => {
+  test("it is a menu row named by its text, and it is not there for empty text", async () => {
     setProvider("openai");
     const b = btn(await mount())!;
-    expect(b.getAttribute("aria-label")).toBe("Listen");
-    expect(b.getAttribute("title")).toBeNull();
+    expect(b.getAttribute("role")).toBe("menuitem");
+    expect(b.textContent).toBe("Listen");
     expect(btn(await mount({ text: "  " }))).toBeNull();
   });
 
@@ -129,11 +134,11 @@ describe("the Listen button of a bot message", () => {
       { url: expect.stringContaining("/api/speech"), body: { text: "Hello there.", botId: "b1" } },
     ]);
     expect(played).toHaveLength(1);
-    expect(btn(el)!.getAttribute("aria-label")).toBe("Stop listening");
+    expect(btn(el)!.textContent).toBe("Stop listening");
     await press(btn(el)!);
     expect(played[0]!.paused).toBe(true);
     expect(getListenState().phase).toBe("idle");
-    expect(btn(el)!.getAttribute("aria-label")).toBe("Listen");
+    expect(btn(el)!.textContent).toBe("Listen");
     await press(btn(el)!);
     await act(async () => played[1]!.end!());
     expect(getListenState().phase).toBe("idle");
@@ -178,7 +183,7 @@ describe("the Listen button of a bot message", () => {
     expect(getListenState()).toEqual({ id: "b", phase: "playing" });
   });
 
-  test("an error says why, in the button's name, and the button can be pressed again", async () => {
+  test("a failure leaves the row ready to try again", async () => {
     setProvider("openai");
     answer = () =>
       Response.json(
@@ -192,10 +197,11 @@ describe("the Listen button of a bot message", () => {
       );
     const el = await mount();
     await press(btn(el)!);
-    expect(btn(el)!.getAttribute("aria-label")).toBe(
-      "The text-to-speech provider did not accept the API key.",
-    );
-    expect(el.querySelector('[role="alert"]')?.textContent).toContain("did not accept");
+    expect(getListenState()).toMatchObject({
+      phase: "error",
+      message: "The text-to-speech provider did not accept the API key.",
+    });
+    expect(btn(el)!.textContent).toBe("Listen");
     answer = audio;
     await press(btn(el)!);
     expect(played).toHaveLength(1);

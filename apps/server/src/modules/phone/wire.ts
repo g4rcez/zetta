@@ -9,7 +9,7 @@ export type WireCodec = "L16" | "PCMU";
 
 /**
  * L16 is 16-bit linear audio in network byte order (big endian), 16 kHz. Telnyx's page names L16 but does not write the byte layout:
- * big endian is the RTP standard (RFC 3551) and what its decision document assumed. Not verified against a real account.
+ * big endian is the RTP standard (RFC 3551) and what its decision document assumed.
  */
 export function decodeAudio(payload: string, codec: WireCodec): Int16Array {
   const bytes = Uint8Array.from(Buffer.from(payload, "base64"));

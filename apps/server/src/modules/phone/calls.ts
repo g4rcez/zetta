@@ -169,6 +169,8 @@ type LiveCall = {
   readonly rowId: string;
   readonly ownerId: string;
   readonly providerName: PhoneProviderId;
+  /** The provider account the call runs on: only its events reach the call. */
+  readonly account: string;
   bind(callControlId: string): void;
   /** The answering machine detection said who picked up. */
   machine(result: "human" | "machine"): void;
@@ -179,6 +181,10 @@ type LiveCall = {
   answered(): void;
   end(reason: VoiceEndReason, o?: { fromProvider?: boolean }): Promise<void>;
 };
+
+/** The id an event is remembered by, so that it is handled once. The table holds 200 characters. */
+export const replayKey = (provider: Pick<PhoneProvider, "name" | "account">, eventId: string) =>
+  `${provider.name}:${provider.account.slice(0, 16)}:${eventId}`.slice(0, 200);
 
 export function createPhoneCalls(deps: PhoneCallDeps) {
   const { db } = deps;
@@ -369,6 +375,7 @@ export function createPhoneCalls(deps: PhoneCallDeps) {
       rowId: init.rowId,
       ownerId,
       providerName: init.provider.name,
+      account: init.provider.account,
       bind: (id) => void (controlId = id),
       machine,
       hangUp,
@@ -1029,6 +1036,21 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
     return mode === "local" || mode === "remote";
   };
 
+  /**
+   * Whether the account that signed an event is one a number is called through: its owner's own, or the installation's (a number
+   * stays on the account that holds it when its owner connects one later). Another member's account signs well too, and the number
+   * of an event is only what its sender wrote.
+   */
+  async function signedFor(
+    number: { ownerUserId: string },
+    provider: Pick<PhoneProvider, "name" | "account">,
+  ) {
+    for (const owner of [number.ownerUserId, undefined])
+      if ((await deps.reader.provider(provider.name, owner))?.account === provider.account)
+        return true;
+    return false;
+  }
+
   async function initiated(ev: PhoneEvent, provider: PhoneProvider) {
     const callId = ev.callControlId;
     if (!callId || ev.direction !== "incoming" || live.has(callId)) return;
@@ -1039,9 +1061,14 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
           .from(phoneNumber)
           .where(and(eq(phoneNumber.e164, to), ne(phoneNumber.status, "released")))
       : [];
-    // A number this installation does not hold, one that belongs to the other provider, or speech the phone cannot use (the browser
-    // voice): not answered, nothing to say.
-    if (!number || number.provider !== provider.name || !(await canSpeak()))
+    // A number this installation does not hold, one that belongs to the other provider or another account, or speech the phone cannot
+    // use (the browser voice): not answered, nothing to say. Nothing is recorded for the number before this.
+    if (
+      !number ||
+      number.provider !== provider.name ||
+      !(await signedFor(number, provider)) ||
+      !(await canSpeak())
+    )
       return void (await provider.reject(callId).catch(() => undefined));
     const settings = await deps.reader.settings();
     const from = normalizeE164(ev.from ?? "") ?? null;
@@ -1153,26 +1180,26 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
   }
 
   async function handle(ev: PhoneEvent, provider: PhoneProvider) {
-    const callId = ev.callControlId;
+    const found = live.get(ev.callControlId ?? "");
+    // Only the account a call runs on may speak about it.
+    const call = found?.account === provider.account ? found : undefined;
     switch (ev.type) {
       case "call.initiated":
         return initiated(ev, provider);
       case "call.answered":
-        return void live.get(callId ?? "")?.answered();
+        return void call?.answered();
       case "call.dtmf.received":
         if (provider.caps.dtmf !== "webhook") return;
-        return void live.get(callId ?? "")?.dtmf(String(ev.payload.digit ?? ""));
+        return void call?.dtmf(String(ev.payload.digit ?? ""));
       case "streaming.stopped":
-        return void (await live.get(callId ?? "")?.end("disconnected"));
+        return void (await call?.end("disconnected"));
       case "call.machine.detection.ended":
       case "call.machine.premium.detection.ended": {
         const r = String(ev.payload.result ?? "");
-        return void live
-          .get(callId ?? "")
-          ?.machine(r === "machine" || r === "fax_detected" ? "machine" : "human");
+        return void call?.machine(r === "machine" || r === "fax_detected" ? "machine" : "human");
       }
       case "call.hangup":
-        return void (await live.get(callId ?? "")?.end("hangup", { fromProvider: true }));
+        return void (await call?.end("hangup", { fromProvider: true }));
       default:
         return; // streaming.started and the rest need nothing
     }
@@ -1322,9 +1349,11 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
         if (e instanceof WebhookError && e.code === "REPLAYED") return refuse(409, "REPLAYED");
         return refuse(401, "UNAUTHORIZED");
       }
+      // Ids are the account's own: an event signed elsewhere cannot claim one before the real one arrives.
+      const seen = replayKey(provider, ev.id);
       let first = false;
       try {
-        first = await deps.replay.claim(ev.id);
+        first = await deps.replay.claim(seen);
       } catch {
         provider.releaseEvent(ev.id);
         return refuse(503, "UNAVAILABLE");
@@ -1337,7 +1366,7 @@ Your answer is read aloud by a computer voice: short plain sentences in the othe
         return { status: 200, body: { ok: true }, ...(xml ? { xml } : {}) };
       } catch {
         provider.releaseEvent(ev.id);
-        await deps.replay.release(ev.id).catch(() => undefined);
+        await deps.replay.release(seen).catch(() => undefined);
         return refuse(500, "UNAVAILABLE");
       }
     },

@@ -610,6 +610,35 @@ suite("bot phone numbers against postgres", () => {
         expect(moved).toMatchObject({ status: "active", heldUntil: null, botId: to.id });
       });
 
+      test("refused when the number is in the old owner's own account, allowed when the installation holds it", async () => {
+        const { to, view } = await setup();
+        const elsewhere = startFakeTelnyx();
+        const other = createTelnyxProvider({
+          apiKey: elsewhere.apiKey,
+          publicKey: elsewhere.publicKey,
+          connectionRef: elsewhere.connectionRef,
+          baseUrl: elsewhere.baseUrl,
+        });
+        // `provider` holds the number. With `own`, that is the account only A reaches; otherwise it is the installation's.
+        const withAccounts = (own: boolean) =>
+          createPhoneService({
+            db,
+            reader: {
+              offer: async () => offer,
+              provider: async (_id: unknown, owner?: string) =>
+                (owner === A) === own ? provider : other,
+              settings: async () => ({}) as never,
+            },
+            now: () => clock,
+          });
+        try {
+          await failsWith(withAccounts(true).reassign(admin, view.id, to.id), "WRONG_STATE");
+          expect((await withAccounts(false).reassign(admin, view.id, to.id)).botId).toBe(to.id);
+        } finally {
+          elsewhere.stop();
+        }
+      });
+
       test("refused when the target has a number, is archived or is the same bot", async () => {
         const { from, to, view } = await setup();
         await failsWith(service.reassign(admin, view.id, from.id), "HAVE_ONE");

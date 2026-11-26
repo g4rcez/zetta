@@ -420,10 +420,39 @@ describe("the account check", () => {
       balance: "10.0000 USD",
     });
   });
-  test("a wrong token says the key is not accepted", async () => {
+  test("a wrong token says the key is not accepted, with Twilio's numbers and none of its words", async () => {
     expect(await make({ authToken: "wrong" }).checkAccount()).toEqual({
       keyOk: false,
       applicationOk: false,
+      refusal: { status: 401, code: 20003 },
+    });
+  });
+  /** A Twilio that answers `reply` for one resource and the usual fake for the rest. */
+  const answering = (suffix: string, reply: () => Response) =>
+    createTwilioProvider({
+      accountSid: fake.accountSid,
+      authToken: fake.authToken,
+      publicUrl: fake.publicUrl,
+      baseUrl: fake.baseUrl,
+      fetch: ((url: string, init: RequestInit) =>
+        url.endsWith(suffix) ? Promise.resolve(reply()) : fetch(url, init)) as typeof fetch,
+    });
+  test("an account that may not read its balance still passes", async () => {
+    const p = answering("/Balance.json", () => Response.json({ code: 20003 }, { status: 401 }));
+    expect(await p.checkAccount()).toEqual({
+      keyOk: true,
+      applicationOk: true,
+      balance: undefined,
+    });
+  });
+  test("a suspended account is named as such", async () => {
+    const p = answering(`/Accounts/${fake.accountSid}.json`, () =>
+      Response.json({ status: "suspended" }),
+    );
+    expect(await p.checkAccount()).toEqual({
+      keyOk: false,
+      applicationOk: false,
+      accountState: "suspended",
     });
   });
 });

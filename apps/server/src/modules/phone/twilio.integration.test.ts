@@ -598,6 +598,56 @@ suite("phone calls through Twilio against postgres", () => {
       expect(await rowOf(number.id)).toHaveLength(0);
     });
 
+    // An account SID is not a secret: another member can save it beside a token of their own and sign with that.
+    test("a call signed with another member's account is turned away, even under the same account SID", async () => {
+      const theirs = createTwilioProvider({
+        accountSid: twilio.accountSid,
+        authToken: "another-token",
+        owner: "attacker",
+        publicUrl: twilio.publicUrl,
+        baseUrl: twilio.baseUrl,
+      });
+      const door = createPhoneCalls({
+        db,
+        phone: phoneSvc,
+        reader: {
+          provider: async (_id: unknown, owner?: string) =>
+            owner === "attacker" ? theirs : twilioProvider,
+          settings: reader.settings,
+        } as never,
+        replay: createReplayStore(db),
+        chat,
+        lookup,
+        transcriber,
+        synthesizer,
+      });
+      const { number } = await mk();
+      const path = "/api/phone/twilio/voice/attacker";
+      const w = twilio.webhook(
+        path,
+        {
+          CallSid: newSid(),
+          AccountSid: twilio.accountSid,
+          From: "+15550100001",
+          To: number.e164!,
+          CallStatus: "ringing",
+          Direction: "inbound",
+          ApiVersion: "2010-04-01",
+        },
+        { token: "another-token" },
+      );
+      const res = await door.webhook(w.body, new Headers(w.headers), {
+        provider: "twilio",
+        path,
+        ownerUserId: "attacker",
+      });
+      expect(res.status).toBe(200);
+      expect(res.xml).toContain("<Reject");
+      expect(res.xml).not.toContain("token");
+      expect(await rowOf(number.id)).toHaveLength(0);
+      await door.endAll();
+    });
+
     test("a replay of a status callback is refused, also by a second instance sharing the database; a changed sequence is a new event", async () => {
       const sid = newSid();
       const completed = twilio.status(sid, "completed", 7);

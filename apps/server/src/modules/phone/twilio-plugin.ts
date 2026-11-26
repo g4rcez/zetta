@@ -13,6 +13,7 @@ import {
   type PluginDef,
   type PluginStatus,
 } from "../integrations/plugins/registry";
+import type { AccountCheck } from "./provider";
 import { createTwilioProvider } from "./twilio";
 
 export const TWILIO_PLUGIN_ID = "twilio";
@@ -20,19 +21,45 @@ export const TWILIO_PLUGIN_ID = "twilio";
 /** What one Twilio account needs to place and answer calls. */
 export type TwilioAccount = { accountSid: string; authToken: string };
 
+const ACCOUNT_SID = {
+  source: "AC[0-9a-zA-Z]{32}",
+  format: "starts with AC and has 34 characters. Copy it from Twilio Console > Account info.",
+};
+const isAccountSid = (value: string) => new RegExp(`^${ACCOUNT_SID.source}$`).test(value);
+
 /** The account saved in a plugin configuration, or undefined while something is missing or the Account SID is not one. */
 export function twilioAccountOf(
   config: Readonly<Record<string, string>>,
 ): TwilioAccount | undefined {
   const accountSid = (config.accountSid ?? "").trim();
   const authToken = (config.authToken ?? "").trim();
-  if (!/^AC[0-9a-zA-Z]{32}$/.test(accountSid) || !authToken) return undefined;
+  if (!isAccountSid(accountSid) || !authToken) return undefined;
   return { accountSid, authToken };
+}
+
+/** Why Twilio would not take the account, for the person: what to fix, with Twilio's own numbers. */
+export function twilioRefusal({ refusal, accountState }: AccountCheck): string {
+  if (accountState)
+    return `Twilio says this account is ${accountState}. Open the Twilio Console to see why.`;
+  if (refusal?.code === 20008)
+    return "These are Twilio test credentials (error 20008). Enter the live Account SID and Auth Token from Twilio Console > Account info.";
+  const number = refusal?.code === undefined ? "" : `, error ${refusal.code}`;
+  const answer = refusal ? ` (HTTP ${refusal.status}${number})` : "";
+  return `Twilio did not accept the Account SID and Auth Token${answer}. Copy both again from Twilio Console > Account info (the live Auth Token, not an API key secret), save them together and test.`;
 }
 
 async function status(ctx: PluginContext): Promise<PluginStatus> {
   const account = twilioAccountOf(ctx.config);
-  if (!account) return { state: "needs-auth", detail: "Add the Account SID and the Auth Token." };
+  if (!account) {
+    const saved = (ctx.config.accountSid ?? "").trim();
+    return {
+      state: "needs-auth",
+      detail:
+        saved && !isAccountSid(saved)
+          ? `The saved Account SID is not valid: it ${ACCOUNT_SID.format} Enter it again under Settings.`
+          : "Add the Account SID and the Auth Token.",
+    };
+  }
   try {
     // Only the key and the number list are checked here: the webhook addresses are set on each number, so the public address is not needed.
     const check = await createTwilioProvider({
@@ -40,8 +67,7 @@ async function status(ctx: PluginContext): Promise<PluginStatus> {
       authToken: account.authToken,
       publicUrl: "https://unused.invalid",
     }).checkAccount?.();
-    if (check && !check.keyOk)
-      return { state: "error", detail: "Twilio did not accept the Account SID and Auth Token." };
+    if (check && !check.keyOk) return { state: "error", detail: twilioRefusal(check) };
     if (check && !check.applicationOk)
       return { state: "error", detail: "Twilio did not let Zetta read the account's numbers." };
     return { state: "connected", info: check?.balance ? { balance: check.balance } : undefined };
@@ -69,6 +95,7 @@ export const twilioPlugin: PluginDef = {
       label: "Account SID",
       kind: "text",
       placeholder: "AC…",
+      pattern: ACCOUNT_SID,
       help: "Twilio Console > Account info. Not a secret.",
     },
     {

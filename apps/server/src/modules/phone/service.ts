@@ -754,6 +754,23 @@ export function createPhoneService(deps: {
           "WRONG_STATE",
           "A call is running on that number. Move it after the call.",
         );
+      // Calls are taken only from the number owner's account or the installation's: a number held by the old owner's own account
+      // would stop ringing after the move.
+      const [shared, from, to] = await Promise.all(
+        [undefined, row.ownerUserId, target.ownerUserId].map((owner) =>
+          deps.reader.provider(providerOf(row), owner),
+        ),
+      );
+      if (
+        from &&
+        from.account !== shared?.account &&
+        from.account !== to?.account &&
+        !(await shared?.findNumber(row.e164 ?? "").catch(() => null))
+      )
+        throw new PhoneError(
+          "WRONG_STATE",
+          "This number is in its owner's own provider account. Release it and get a new one for that bot.",
+        );
       let saved: Row | undefined;
       try {
         [saved] = await db

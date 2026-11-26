@@ -774,6 +774,71 @@ suite("incoming phone calls against postgres", () => {
     await l.hangup();
   });
 
+  // Every member may connect an account of their own, so a good signature only says which account sent an event.
+  test("an event signed with another member's account cannot reach a number or a call", async () => {
+    const attacker = startFakeTelnyx();
+    const theirs = createTelnyxProvider({
+      apiKey: attacker.apiKey,
+      publicKey: attacker.publicKey,
+      connectionRef: attacker.connectionRef,
+      baseUrl: attacker.baseUrl,
+    });
+    const door = createPhoneCalls({
+      db,
+      phone: phoneSvc,
+      reader: {
+        provider: async (_id: unknown, owner?: string) =>
+          owner === "attacker" ? theirs : provider,
+        settings: reader.settings,
+      } as never,
+      replay: createReplayStore(db),
+      chat,
+      lookup,
+      transcriber,
+      synthesizer,
+    });
+    const send = (w: { body: string; headers: Record<string, string> }, owner?: string) =>
+      door.webhook(w.body, new Headers(w.headers), owner ? { ownerUserId: owner } : {});
+    try {
+      const { number } = await mk();
+      const id = `v3:forged-${uuidv7()}`;
+      const eventId = `evt-forged-${uuidv7()}`;
+      const forged = attacker.webhook(
+        "call.initiated",
+        { call_control_id: id, from: OWNER_PHONE, to: number.e164, direction: "incoming" },
+        { id: eventId },
+      );
+      expect((await send(forged, "attacker")).status).toBe(200);
+      await Bun.sleep(50);
+      expect(await rowOf(number.id)).toEqual([]);
+      expect(fake.calls.some((c) => c.path.includes(encodeURIComponent(id)))).toBe(false);
+      expect(attacker.calls.map((c) => c.path.split("/").at(-1))).toEqual(["reject"]);
+
+      // The real call with the same event id is still taken: another account cannot claim it first.
+      const real = fake.webhook(
+        "call.initiated",
+        { call_control_id: id, from: "+15550100793", to: number.e164, direction: "incoming" },
+        { id: eventId },
+      );
+      expect((await send(real)).status).toBe(200);
+      await waitFor("the answer", () =>
+        fake.calls.find(
+          (c) => c.path.endsWith("/actions/answer") && c.path.includes(encodeURIComponent(id)),
+        ),
+      );
+      expect(
+        (await send(attacker.webhook("call.hangup", { call_control_id: id }), "attacker")).status,
+      ).toBe(200);
+      await Bun.sleep(50);
+      expect((await rowOf(number.id))[0]?.endedAt).toBeNull();
+      expect((await send(fake.webhook("call.hangup", { call_control_id: id }))).status).toBe(200);
+      await waitFor("the end of the call", async () => (await rowOf(number.id))[0]?.endedAt);
+    } finally {
+      await door.endAll();
+      attacker.stop();
+    }
+  });
+
   test("the webhook door: a bad signature and an old event are refused; a replay is refused, also by a second instance sharing the database", async () => {
     const good = fake.webhook("call.hangup", { call_control_id: "v3:nothing" });
     const bad = { body: good.body.replace("nothing", "else"), headers: good.headers };

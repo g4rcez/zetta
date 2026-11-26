@@ -6,7 +6,7 @@ import { getPlugin } from "../integrations/plugins/registry";
 import { createPhoneProviderReader } from "./config";
 import { startFakeTwilio } from "./fake-twilio";
 import { TWILIO_STATUS_PATH, TWILIO_VOICE_PATH, createTwilioProvider } from "./twilio";
-import { TWILIO_PLUGIN_ID, twilioAccountOf, twilioPlugin } from "./twilio-plugin";
+import { TWILIO_PLUGIN_ID, twilioAccountOf, twilioPlugin, twilioRefusal } from "./twilio-plugin";
 
 const fake = startFakeTwilio();
 afterAll(() => fake.stop());
@@ -51,6 +51,38 @@ describe("Twilio is a plugin", () => {
       twilioAccountOf({ accountSid: `SK${"a".repeat(32)}`, authToken: "tok" }),
     ).toBeUndefined();
     expect(twilioAccountOf({ authToken: "tok" })).toBeUndefined();
+  });
+
+  test("the status tells a saved value that is not an Account SID from a missing one", async () => {
+    const check = (config: Record<string, string>) =>
+      twilioPlugin.status!({ userId: "ana", config, setConfig: async () => {} });
+    expect(await check({ accountSid: "ana@example.invalid", authToken: "tok" })).toEqual({
+      state: "needs-auth",
+      detail: expect.stringContaining("The saved Account SID is not valid"),
+    });
+    expect(await check({})).toEqual({
+      state: "needs-auth",
+      detail: "Add the Account SID and the Auth Token.",
+    });
+  });
+
+  test("a refusal says what Twilio answered and what to fix", () => {
+    const base = { keyOk: false, applicationOk: false };
+    expect(twilioRefusal({ ...base, refusal: { status: 401, code: 20003 } })).toContain(
+      "(HTTP 401, error 20003)",
+    );
+    expect(twilioRefusal({ ...base, refusal: { status: 403, code: 20008 } })).toContain(
+      "test credentials",
+    );
+    expect(twilioRefusal({ ...base, accountState: "closed" })).toContain("account is closed");
+  });
+
+  test("saving refuses what is not an Account SID, with the field's own rule", () => {
+    const field = twilioPlugin.fields.find((f) => f.key === "accountSid")!;
+    const rule = new RegExp(`^(?:${field.pattern!.source})$`);
+    expect(rule.test(SID)).toBe(true);
+    expect(rule.test(`SK${"a".repeat(32)}`)).toBe(false);
+    expect(rule.test(`${SID} extra`)).toBe(false);
   });
 });
 
